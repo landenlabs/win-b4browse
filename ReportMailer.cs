@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -37,33 +38,52 @@ namespace BrowseSafe
             switch (settings.EmailMethod)
             {
                 case EmailMethod.Gmail:
-                    SendWeb(owner, GmailUrl(subject, text, out bool gt), settings.EmailBrowser, gt, savedTo);
+                    OpenWeb(owner, GmailUrl(subject, text), settings.EmailBrowser);
                     break;
                 case EmailMethod.OutlookWeb:
-                    SendWeb(owner, OutlookUrl(subject, text, out bool ot), settings.EmailBrowser, ot, savedTo);
+                    OpenWeb(owner, OutlookUrl(subject, text), settings.EmailBrowser);
                     break;
                 default:
+                    // Desktop mail client: full report in the body AND attached.
                     SendViaMapi(owner, subject, text, savedTo);
                     break;
             }
         }
 
+        // Max total URL length we dare pass on the launch command line (OS limit ~32767).
+        private const int MaxUrl = 30000;
+
+        /// <summary>
+        /// URL-encodes the whole report as the compose body, only trimming if the
+        /// resulting URL would exceed the command-line limit (rare). The full report
+        /// is always on the clipboard as a backup.
+        /// </summary>
+        private static string FitBody(string text, string baseUrl)
+        {
+            string enc = Uri.EscapeDataString(text);
+            if (baseUrl.Length + enc.Length <= MaxUrl) return enc;
+
+            const string note = "\r\n\r\n[Report truncated for the browser - the full report is on your clipboard; press Ctrl+V to paste it.]";
+            int raw = text.Length;
+            while (raw > 0)
+            {
+                string candidate = text.Substring(0, raw) + note;
+                enc = Uri.EscapeDataString(candidate);
+                if (baseUrl.Length + enc.Length <= MaxUrl) return enc;
+                raw -= 1000;
+            }
+            return Uri.EscapeDataString(note);
+        }
+
         // ---- Web compose ------------------------------------------------- //
-        private static void SendWeb(Form owner, string url, BrowserChoice browser, bool truncated, string? savedTo)
+        private static void OpenWeb(Form owner, string url, BrowserChoice browser)
         {
             try { OpenInBrowser(url, browser); }
             catch (Exception ex)
             {
                 MessageBox.Show(owner, "Could not open the browser: " + ex.Message, "Email report",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
             }
-            if (truncated)
-                MessageBox.Show(owner,
-                    "This report is long, so the email body was truncated for the web compose window.\n\n" +
-                    (savedTo != null ? $"The full report was saved to:\n{savedTo}\n\n" : "") +
-                    "It has also been copied to your clipboard - paste to include the full text.",
-                    "Email report", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         private static void OpenInBrowser(string url, BrowserChoice browser)
@@ -87,21 +107,18 @@ namespace BrowseSafe
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         }
 
-        private static string GmailUrl(string subject, string text, out bool truncated)
-            => "https://mail.google.com/mail/?view=cm&fs=1" +
-               $"&su={Uri.EscapeDataString(subject)}&body={Uri.EscapeDataString(Body(text, out truncated))}";
-
-        private static string OutlookUrl(string subject, string text, out bool truncated)
-            => "https://outlook.office.com/mail/deeplink/compose?" +
-               $"subject={Uri.EscapeDataString(subject)}&body={Uri.EscapeDataString(Body(text, out truncated))}";
-
-        private static string Body(string text, out bool truncated)
+        private static string GmailUrl(string subject, string text)
         {
-            const int max = 1500; // keep the compose URL within browser/OS limits
-            truncated = text.Length > max;
-            return truncated
-                ? text.Substring(0, max) + "\r\n\r\n...[truncated - full report is saved to a file and on the clipboard]"
-                : text;
+            string baseUrl = "https://mail.google.com/mail/?view=cm&fs=1" +
+                             $"&su={Uri.EscapeDataString(subject)}&body=";
+            return baseUrl + FitBody(text, baseUrl);
+        }
+
+        private static string OutlookUrl(string subject, string text)
+        {
+            string baseUrl = "https://outlook.office.com/mail/deeplink/compose?" +
+                             $"subject={Uri.EscapeDataString(subject)}&body=";
+            return baseUrl + FitBody(text, baseUrl);
         }
 
         // ---- Simple MAPI (default desktop mail client) ------------------- //

@@ -35,6 +35,20 @@ namespace BrowseSafe
                 WriteReport(path);
                 return;
             }
+            if (args.Any(a => a.Equals("--inventory", StringComparison.OrdinalIgnoreCase)))
+            {
+                DumpGroups("Inventory checks", new[]
+                {
+                    SafetyChecks.CheckChromeExe(),
+                    SafetyChecks.CheckChromeExtensions(),
+                    SafetyChecks.CheckServices(),
+                    SafetyChecks.CheckProcesses(),
+                    SafetyChecks.CheckStartup(),
+                    SafetyChecks.CheckInstalled(),
+                    SafetyChecks.CheckDevices(),
+                });
+                return;
+            }
 
             ApplicationConfiguration.Initialize();
             Application.Run(new MainForm());
@@ -85,6 +99,31 @@ namespace BrowseSafe
             File.WriteAllText(path, sb.ToString());
             Console.WriteLine(sb.ToString());
             Console.WriteLine($"(report written to {path})");
+        }
+
+        /// <summary>Headless dump of arbitrary check groups (used to verify the inventory tabs).</summary>
+        static void DumpGroups(string heading, System.Collections.Generic.IEnumerable<CheckGroup> groups)
+        {
+            Console.WriteLine($"{heading}  -  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            foreach (var g in groups)
+            {
+                Console.WriteLine();
+                Console.WriteLine(g.Title);
+                Console.WriteLine(new string('-', 64));
+                foreach (var r in g.Results)
+                {
+                    if (r.Table) { Console.WriteLine("  " + r.Name); continue; }
+                    string tag = r.Status switch
+                    {
+                        CheckStatus.Pass => "[PASS]",
+                        CheckStatus.Warn => "[WARN]",
+                        CheckStatus.Fail => "[FAIL]",
+                        _ => "[INFO]",
+                    };
+                    Console.WriteLine($"  {tag} {r.Name}" +
+                        (string.IsNullOrEmpty(r.Detail) ? "" : $"  -  {r.Detail}"));
+                }
+            }
         }
     }
 }

@@ -649,8 +649,18 @@ namespace BrowseSafe
             catch { return ""; }
         }
 
-        private static string Str(JsonElement e, string p) =>
-            e.TryGetProperty(p, out var v) ? (v.GetString() ?? "") : "";
+        private static string Str(JsonElement e, string p)
+        {
+            if (!e.TryGetProperty(p, out var v)) return "";
+            return v.ValueKind switch
+            {
+                JsonValueKind.String => v.GetString() ?? "",
+                JsonValueKind.Number => v.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => "",
+            };
+        }
 
         /// <summary>Names a recognised public resolver from its egress IP / PTR / org text.</summary>
         private static string KnownResolverName(IPAddress ip, string ptr, string org)

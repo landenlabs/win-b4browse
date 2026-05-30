@@ -2,41 +2,44 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
-using System.IO;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace BrowseSafe
 {
     /// <summary>
-    /// Single-window UI. A button runs all checks on a background thread and
-    /// streams colour-coded results into a RichTextBox, with an overall
-    /// "safe to run Chrome?" verdict banner on top.
+    /// Main window: an overall-verdict banner, a toolbar, a collapsible left panel
+    /// of Windows Security shortcuts, and a tabbed main area where each tab is a
+    /// <see cref="ResultsView"/> running its own set of checks.
     /// </summary>
     public sealed class MainForm : Form
     {
-        private readonly Button _runButton;
-        private readonly Button _chromeButton;
         private readonly Label _banner;
-        private readonly RichTextBox _output;
-        private readonly Label _hint;
+        private readonly Button _toggleButton;
+        private readonly Button _chromeButton;
+        private readonly Panel _leftPanel;
+        private readonly TabControl _tabs;
+        private readonly ResultsView _scanView;
 
-        // Char range of the inline "Open hosts folder" link inside _output (-1 = not present).
-        private int _hostsLinkStart = -1;
-        private int _hostsLinkEnd = -1;
-
-        // Status colours.
         private static readonly Color ColorPass = Color.FromArgb(0, 140, 0);
         private static readonly Color ColorWarn = Color.FromArgb(190, 120, 0);
         private static readonly Color ColorFail = Color.FromArgb(200, 0, 0);
-        private static readonly Color ColorInfo = Color.FromArgb(70, 70, 70);
-        private static readonly Color ColorLink = Color.FromArgb(0, 102, 204);
+
+        // Windows Security deep-link pages (windowsdefender: protocol).
+        private static readonly (string Label, string Uri)[] SecurityShortcuts =
+        {
+            ("Virus && threat protection",      "windowsdefender://threat"),
+            ("Account protection",              "windowsdefender://account"),
+            ("Firewall && network protection",  "windowsdefender://network"),
+            ("App && browser control",          "windowsdefender://appbrowser"),
+            ("Device security",                 "windowsdefender://devicesecurity"),
+            ("Device performance && health",    "windowsdefender://devicehealth"),
+        };
 
         public MainForm()
         {
             Text = "Browse Safe - Chrome Safety Check";
-            MinimumSize = new Size(720, 560);
-            Size = new Size(820, 680);
+            MinimumSize = new Size(880, 600);
+            Size = new Size(1000, 740);
             StartPosition = FormStartPosition.CenterScreen;
             Font = new Font("Segoe UI", 9f);
             BackColor = Color.White;
@@ -44,191 +47,185 @@ namespace BrowseSafe
             _banner = new Label
             {
                 Dock = DockStyle.Top,
-                Height = 56,
+                Height = 50,
                 TextAlign = ContentAlignment.MiddleCenter,
-                Font = new Font("Segoe UI", 14f, FontStyle.Bold),
+                Font = new Font("Segoe UI", 13f, FontStyle.Bold),
                 ForeColor = Color.White,
                 BackColor = Color.FromArgb(90, 90, 90),
-                Text = "Click “Run Safety Checks” to begin",
+                Text = "Run the Safety Scan to evaluate browsing safety",
             };
 
-            var topPanel = new Panel { Dock = DockStyle.Top, Height = 52, Padding = new Padding(10, 9, 10, 9) };
-
-            _runButton = new Button
+            // -- Toolbar --
+            var toolbar = new Panel { Dock = DockStyle.Top, Height = 42, BackColor = Color.FromArgb(245, 245, 245) };
+            _toggleButton = new Button
             {
-                Text = "Run Safety Checks",
-                Width = 170,
-                Height = 34,
-                Left = 10,
-                Top = 9,
+                Text = "◀ Hide tools",
+                Width = 110,
+                Height = 28,
+                Left = 8,
+                Top = 7,
                 FlatStyle = FlatStyle.System,
-                Font = new Font("Segoe UI", 9.5f, FontStyle.Bold),
             };
-            _runButton.Click += async (_, _) => await RunChecksAsync();
+            _toggleButton.Click += (_, _) => ToggleLeftPanel();
 
             _chromeButton = new Button
             {
                 Text = "Launch Chrome",
                 Width = 140,
-                Height = 34,
-                Left = 190,
-                Top = 9,
+                Height = 28,
+                Left = 126,
+                Top = 7,
                 FlatStyle = FlatStyle.System,
                 Enabled = false,
             };
             _chromeButton.Click += (_, _) => LaunchChrome();
 
-            _hint = new Label
+            var toolHint = new Label
             {
                 AutoSize = true,
-                Left = 345,
-                Top = 17,
+                Left = 278,
+                Top = 13,
                 ForeColor = Color.Gray,
-                Text = "Verifies DNS, time, proxy, and Windows security before browsing.",
+                Text = "Left panel opens Windows Security pages. Each tab runs its own checks.",
             };
+            toolbar.Controls.Add(_toggleButton);
+            toolbar.Controls.Add(_chromeButton);
+            toolbar.Controls.Add(toolHint);
 
-            topPanel.Controls.Add(_runButton);
-            topPanel.Controls.Add(_chromeButton);
-            topPanel.Controls.Add(_hint);
-
-            _output = new RichTextBox
+            // -- Left panel: Windows Security shortcuts --
+            _leftPanel = new Panel { Dock = DockStyle.Left, Width = 230, BackColor = Color.FromArgb(238, 240, 243) };
+            var leftHeader = new Label
+            {
+                Dock = DockStyle.Top,
+                Height = 34,
+                Text = "  Windows Security",
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+                ForeColor = Color.FromArgb(40, 40, 40),
+            };
+            var flow = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ReadOnly = true,
-                BorderStyle = BorderStyle.None,
-                Font = new Font("Consolas", 9.5f),
-                BackColor = Color.White,
-                DetectUrls = false,
-                WordWrap = false,
-                ScrollBars = RichTextBoxScrollBars.Both,
-                Cursor = Cursors.IBeam,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(10, 6, 10, 6),
             };
-            _output.MouseDown += Output_MouseDown;
-            _output.MouseMove += Output_MouseMove;
+            foreach (var (label, uri) in SecurityShortcuts)
+            {
+                var b = new Button
+                {
+                    Text = label,
+                    Width = 200,
+                    Height = 40,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    FlatStyle = FlatStyle.System,
+                    Margin = new Padding(0, 0, 0, 8),
+                    Tag = uri,
+                };
+                b.Click += (s, _) => OpenUri((string)((Button)s!).Tag!);
+                flow.Controls.Add(b);
+            }
+            var leftNote = new Label
+            {
+                AutoSize = false,
+                Width = 200,
+                Height = 60,
+                ForeColor = Color.Gray,
+                Font = new Font("Segoe UI", 8f),
+                Text = "Opens the Windows Security app to the chosen page.",
+                Margin = new Padding(0, 8, 0, 0),
+            };
+            flow.Controls.Add(leftNote);
+            _leftPanel.Controls.Add(flow);
+            _leftPanel.Controls.Add(leftHeader);
 
-            // Add in reverse z-order so Fill sits below the docked top items.
-            Controls.Add(_output);
-            Controls.Add(topPanel);
+            // -- Tabs --
+            _tabs = new TabControl { Dock = DockStyle.Fill };
+            _tabs.SelectedIndexChanged += (_, _) => AutoRunSelectedTab();
+
+            _scanView = AddTab("Safety Scan", "Run Safety Checks",
+                "Click to scan.", ScanSteps(), reportVerdict: true);
+            _scanView.Completed += OnScanCompleted;
+
+            AddTab("Chrome", "Check Chrome", "Click to inspect Chrome.", new[]
+            {
+                ("Chrome executable", (Func<CheckGroup>)SafetyChecks.CheckChromeExe),
+                ("Chrome extensions", (Func<CheckGroup>)SafetyChecks.CheckChromeExtensions),
+            }, false);
+            AddTab("Services", "Refresh", "Click to list services.", One("services", SafetyChecks.CheckServices), false);
+            AddTab("Processes", "Refresh", "Click to list processes.", One("processes", SafetyChecks.CheckProcesses), false);
+            AddTab("Startup", "Refresh", "Click to list startup items.", One("startup", SafetyChecks.CheckStartup), false);
+            AddTab("Installed", "Refresh", "Click to list installed programs.", One("installed", SafetyChecks.CheckInstalled), false);
+            AddTab("Devices", "Refresh", "Click to list drivers.", One("drivers", SafetyChecks.CheckDevices), false);
+
+            // Add Fill first, then Left, then Top items (outermost added last).
+            Controls.Add(_tabs);
+            Controls.Add(_leftPanel);
+            Controls.Add(toolbar);
             Controls.Add(_banner);
         }
 
-        private async Task RunChecksAsync()
+        /// <summary>The full safety scan, as labelled steps rendered incrementally.</summary>
+        private static (string, Func<CheckGroup>)[] ScanSteps() => new (string, Func<CheckGroup>)[]
         {
-            _runButton.Enabled = false;
-            _chromeButton.Enabled = false;
-            _output.Clear();
-            _hostsLinkStart = _hostsLinkEnd = -1;
-            SetBanner("Running checks ...", Color.FromArgb(40, 90, 160));
-            AppendLine($"Browse Safe  -  {DateTime.Now:yyyy-MM-dd HH:mm:ss}", ColorInfo, FontStyle.Italic);
-            AppendLine("");
+            ("current DNS servers", SafetyChecks.CheckDnsServers),
+            ("connected router",    SafetyChecks.CheckRouter),
+            ("upstream resolver",   SafetyChecks.CheckUpstreamResolver),
+            ("DNS lookups",         SafetyChecks.CheckDnsLookups),
+            ("cross-resolver DNS",  SafetyChecks.CheckCrossResolver),
+            ("hosts file",          SafetyChecks.CheckHostsFile),
+            ("e-mail (MX) DNS",     SafetyChecks.CheckEmailDns),
+            ("proxy configuration", SafetyChecks.CheckProxy),
+            ("atomic time sync",    SafetyChecks.CheckTimeSync),
+            ("Windows security",    SafetyChecks.CheckWindowsSecurity),
+        };
 
-            // Each section runs on a background thread and is rendered as soon
-            // as it completes, so the network probes (router/DNS) stream in.
-            var checks = new (string Label, Func<CheckGroup> Run)[]
-            {
-                ("current DNS servers", SafetyChecks.CheckDnsServers),
-                ("connected router",    SafetyChecks.CheckRouter),
-                ("upstream resolver",   SafetyChecks.CheckUpstreamResolver),
-                ("DNS lookups",         SafetyChecks.CheckDnsLookups),
-                ("cross-resolver DNS",  SafetyChecks.CheckCrossResolver),
-                ("hosts file",          SafetyChecks.CheckHostsFile),
-                ("e-mail (MX) DNS",     SafetyChecks.CheckEmailDns),
-                ("proxy configuration", SafetyChecks.CheckProxy),
-                ("atomic time sync",    SafetyChecks.CheckTimeSync),
-                ("Windows security",    SafetyChecks.CheckWindowsSecurity),
-            };
+        private static (string, Func<CheckGroup>)[] One(string label, Func<CheckGroup> run)
+            => new[] { (label, run) };
 
-            CheckStatus overall = CheckStatus.Pass;
-            foreach (var (label, run) in checks)
-            {
-                SetBanner($"Checking {label} ...", Color.FromArgb(40, 90, 160));
-                CheckGroup g = await Task.Run(run);
-                RenderGroup(g);
-                if (CheckGroup.Rank(g.Worst()) > CheckGroup.Rank(overall))
-                    overall = g.Worst();
-            }
-
-            RenderVerdict(overall);
-            _runButton.Enabled = true;
+        private ResultsView AddTab(string title, string runLabel, string intro,
+            (string, Func<CheckGroup>)[] steps, bool reportVerdict)
+        {
+            var view = new ResultsView(runLabel, intro, steps, reportVerdict);
+            var page = new TabPage(title) { UseVisualStyleBackColor = true };
+            page.Controls.Add(view);
+            _tabs.TabPages.Add(page);
+            return view;
         }
 
-        private void RenderGroup(CheckGroup group)
+        protected override void OnShown(EventArgs e)
         {
-            // The hosts section title carries an inline clickable "Open hosts folder" link.
-            if (group.Title.Contains("Hosts File", StringComparison.OrdinalIgnoreCase))
-            {
-                Append(group.Title, Color.Black, FontStyle.Bold, 11f);
-                Append("      ", ColorInfo);
-                _hostsLinkStart = _output.TextLength;
-                Append("[ Open hosts folder ]", ColorLink, FontStyle.Underline, 9.5f);
-                _hostsLinkEnd = _output.TextLength;
-                AppendLine("");
-            }
-            else
-            {
-                AppendLine(group.Title, Color.Black, FontStyle.Bold, 11f);
-            }
-            AppendLine(new string('─', 60), ColorInfo);
-
-            foreach (var r in group.Results)
-            {
-                // Pre-formatted table line: print verbatim in the status colour, no tag.
-                if (r.Table)
-                {
-                    AppendLine(r.Name, ColorFor(r.Status));
-                    continue;
-                }
-
-                string tag = r.Status switch
-                {
-                    CheckStatus.Pass => "[ PASS ]",
-                    CheckStatus.Warn => "[ WARN ]",
-                    CheckStatus.Fail => "[ FAIL ]",
-                    _ => "[ INFO ]",
-                };
-                Color c = ColorFor(r.Status);
-
-                Append(tag + "  ", c, FontStyle.Bold);
-                Append(r.Name, Color.Black, FontStyle.Bold);
-                if (!string.IsNullOrEmpty(r.Detail))
-                    Append("  -  " + r.Detail, ColorInfo);
-                AppendLine("");
-            }
-            AppendLine("");
+            base.OnShown(e);
+            _ = _scanView.RunAsync(); // auto-run the initial tab
         }
 
-        private void RenderVerdict(CheckStatus overall)
+        /// <summary>Lazily run a tab's checks the first time it is opened.</summary>
+        private void AutoRunSelectedTab()
+        {
+            if (_tabs.SelectedTab?.Controls.Count > 0 &&
+                _tabs.SelectedTab.Controls[0] is ResultsView rv && !rv.HasRun)
+                _ = rv.RunAsync();
+        }
+
+        private void OnScanCompleted(CheckStatus overall)
         {
             switch (overall)
             {
                 case CheckStatus.Fail:
                     SetBanner("NOT SAFE  -  resolve the FAIL items before browsing", ColorFail);
-                    AppendLine("VERDICT: Unsafe. One or more critical checks failed. " +
-                               "Do not browse until resolved.", ColorFail, FontStyle.Bold, 11f);
                     _chromeButton.Enabled = false;
                     break;
                 case CheckStatus.Warn:
                     SetBanner("CAUTION  -  review the WARN items", ColorWarn);
-                    AppendLine("VERDICT: Use caution. Review the warnings above before browsing.",
-                               ColorWarn, FontStyle.Bold, 11f);
                     _chromeButton.Enabled = true;
                     break;
                 default:
                     SetBanner("SAFE  -  all checks passed", ColorPass);
-                    AppendLine("VERDICT: Safe. All checks passed - good to launch Chrome.",
-                               ColorPass, FontStyle.Bold, 11f);
                     _chromeButton.Enabled = true;
                     break;
             }
         }
-
-        private static Color ColorFor(CheckStatus s) => s switch
-        {
-            CheckStatus.Pass => ColorPass,
-            CheckStatus.Warn => ColorWarn,
-            CheckStatus.Fail => ColorFail,
-            _ => ColorInfo,
-        };
 
         private void SetBanner(string text, Color back)
         {
@@ -236,37 +233,35 @@ namespace BrowseSafe
             _banner.BackColor = back;
         }
 
-        // ---- RichTextBox append helpers (run on UI thread) ----
-        private void Append(string text, Color color, FontStyle style = FontStyle.Regular, float size = 9.5f)
+        private void ToggleLeftPanel()
         {
-            _output.SelectionStart = _output.TextLength;
-            _output.SelectionLength = 0;
-            _output.SelectionColor = color;
-            _output.SelectionFont = new Font("Consolas", size, style);
-            _output.AppendText(text);
-            _output.SelectionColor = _output.ForeColor;
+            _leftPanel.Visible = !_leftPanel.Visible;
+            _toggleButton.Text = _leftPanel.Visible ? "◀ Hide tools" : "▶ Show tools";
         }
 
-        private void AppendLine(string text, Color color, FontStyle style = FontStyle.Regular, float size = 9.5f)
+        private void OpenUri(string uri)
         {
-            Append(text + Environment.NewLine, color, style, size);
+            try
+            {
+                Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Could not open '{uri}': {ex.Message}",
+                    "Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
-
-        private void AppendLine(string text) => AppendLine(text, _output.ForeColor);
 
         private void LaunchChrome()
         {
             try
             {
-                // Let the shell resolve the default handler / registered app.
-                var psi = new ProcessStartInfo("chrome.exe") { UseShellExecute = true };
-                Process.Start(psi);
+                Process.Start(new ProcessStartInfo("chrome.exe") { UseShellExecute = true });
             }
             catch
             {
                 try
                 {
-                    // Fall back to opening the default browser on a blank page.
                     Process.Start(new ProcessStartInfo("about:blank") { UseShellExecute = true });
                 }
                 catch (Exception ex)
@@ -275,47 +270,6 @@ namespace BrowseSafe
                         "Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
-        }
-
-        /// <summary>Opens Explorer at the hosts directory with the hosts file selected.</summary>
-        private void OpenHostsFolder()
-        {
-            string path = SafetyChecks.HostsPath;
-            try
-            {
-                string arg = File.Exists(path)
-                    ? $"/select,\"{path}\""
-                    : $"\"{Path.GetDirectoryName(path)}\"";
-                Process.Start(new ProcessStartInfo("explorer.exe", arg) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(this, "Could not open hosts folder: " + ex.Message,
-                    "Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
-        }
-
-        /// <summary>True if the point lies over the inline "Open hosts folder" link.</summary>
-        private bool IsOverHostsLink(Point p)
-        {
-            if (_hostsLinkStart < 0 || _hostsLinkEnd <= _hostsLinkStart) return false;
-            Point a = _output.GetPositionFromCharIndex(_hostsLinkStart);
-            Point b = _output.GetPositionFromCharIndex(_hostsLinkEnd);
-            if (b.Y < a.Y) return false; // link scrolled off / split
-            int h = (int)Math.Ceiling(_output.Font.GetHeight()) + 4;
-            var rect = new Rectangle(a.X, a.Y, Math.Max(1, b.X - a.X), h);
-            return rect.Contains(p);
-        }
-
-        private void Output_MouseDown(object? sender, MouseEventArgs e)
-        {
-            if (e.Button == MouseButtons.Left && IsOverHostsLink(e.Location))
-                OpenHostsFolder();
-        }
-
-        private void Output_MouseMove(object? sender, MouseEventArgs e)
-        {
-            _output.Cursor = IsOverHostsLink(e.Location) ? Cursors.Hand : Cursors.IBeam;
         }
     }
 }

@@ -279,8 +279,7 @@ namespace BrowseSafe
                 "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'," +
                 "'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'; " +
                 "@(Get-ItemProperty $k -ErrorAction SilentlyContinue | Where-Object {$_.DisplayName} | " +
-                "Select-Object DisplayName,DisplayVersion,Publisher,InstallDate | " +
-                "Sort-Object InstallDate -Descending) | ConvertTo-Json -Compress -Depth 3");
+                "Select-Object DisplayName,DisplayVersion,Publisher,InstallDate) | ConvertTo-Json -Compress -Depth 3");
 
             if (rows.Count == 0)
             {
@@ -288,9 +287,17 @@ namespace BrowseSafe
                 return group;
             }
 
+            // Sort newest-first by parsed yyyyMMdd; entries with no/odd date sort to the bottom.
+            static int InstallDateKey(JsonElement r)
+            {
+                string d = Str(r, "InstallDate");
+                return d.Length == 8 && int.TryParse(d, out int n) ? n : 0;
+            }
+            var ordered = rows.OrderByDescending(InstallDateKey).ToList();
+
             int recentCutoff = int.Parse(DateTime.Now.AddDays(-14).ToString("yyyyMMdd"));
             int shown = 0;
-            foreach (var r in rows)
+            foreach (var r in ordered)
             {
                 if (++shown > MaxList) break;
                 string date = Str(r, "InstallDate");

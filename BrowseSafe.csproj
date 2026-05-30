@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>BrowseSafe</RootNamespace>
+    <AssemblyName>BrowseSafe</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.0</Version>
+    <Company>LanDen Labs</Company>
+    <Product>Browse Safe</Product>
+    <Description>Verifies the network and OS are in a safe state before running the Chrome browser.</Description>
+  </PropertyGroup>
+
+</Project>

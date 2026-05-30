@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Windows.Forms;
 
 namespace BrowseSafe
@@ -16,6 +17,7 @@ namespace BrowseSafe
         private readonly Label _banner;
         private readonly Button _toggleButton;
         private readonly Button _chromeButton;
+        private readonly Button _emailButton;
         private readonly Panel _leftPanel;
         private readonly TabControl _tabs;
         private readonly ResultsView _scanView;
@@ -80,16 +82,28 @@ namespace BrowseSafe
             };
             _chromeButton.Click += (_, _) => LaunchChrome();
 
+            _emailButton = new Button
+            {
+                Text = "Email report  ▾",
+                Width = 130,
+                Height = 28,
+                Left = 274,
+                Top = 7,
+                FlatStyle = FlatStyle.System,
+            };
+            _emailButton.Click += (_, _) => ShowEmailMenu();
+
             var toolHint = new Label
             {
                 AutoSize = true,
-                Left = 278,
+                Left = 416,
                 Top = 13,
                 ForeColor = Color.Gray,
-                Text = "Left panel opens Windows Security pages. Each tab runs its own checks.",
+                Text = "Left panel opens Windows Security pages.",
             };
             toolbar.Controls.Add(_toggleButton);
             toolbar.Controls.Add(_chromeButton);
+            toolbar.Controls.Add(_emailButton);
             toolbar.Controls.Add(toolHint);
 
             // -- Left panel: Windows Security shortcuts --
@@ -144,20 +158,19 @@ namespace BrowseSafe
             _tabs = new TabControl { Dock = DockStyle.Fill };
             _tabs.SelectedIndexChanged += (_, _) => AutoRunSelectedTab();
 
-            _scanView = AddTab("Safety Scan", "Run Safety Checks",
+            _scanView = AddTab("Safety Scan", "scan", "Run Safety Checks",
                 "Click to scan.", ScanSteps(), reportVerdict: true);
             _scanView.Completed += OnScanCompleted;
 
-            AddTab("Chrome", "Check Chrome", "Click to inspect Chrome.", new[]
-            {
-                ("Chrome executable", (Func<CheckGroup>)SafetyChecks.CheckChromeExe),
-                ("Chrome extensions", (Func<CheckGroup>)SafetyChecks.CheckChromeExtensions),
-            }, false);
-            AddTab("Services", "Refresh", "Click to list services.", One("services", SafetyChecks.CheckServices), false);
-            AddTab("Processes", "Refresh", "Click to list processes.", One("processes", SafetyChecks.CheckProcesses), false);
-            AddTab("Startup", "Refresh", "Click to list startup items.", One("startup", SafetyChecks.CheckStartup), false);
-            AddTab("Installed", "Refresh", "Click to list installed programs.", One("installed", SafetyChecks.CheckInstalled), false);
-            AddTab("Devices", "Refresh", "Click to list drivers.", One("drivers", SafetyChecks.CheckDevices), false);
+            AddViewTab("Chrome", "chrome", TabViews.BuildChrome());
+            AddTab("Services", "services", "Refresh", "Click to list services.",
+                One("services", SafetyChecks.CheckServices), false);
+            AddTab("Processes", "processes", "Refresh", "Click to list processes.",
+                One("processes", SafetyChecks.CheckProcesses), false);
+            AddTab("Startup", "startup", "Refresh", "Click to list startup items.",
+                One("startup", SafetyChecks.CheckStartup), false);
+            AddViewTab("Installed", "installed", TabViews.BuildInstalled());
+            AddViewTab("Devices", "devices", TabViews.BuildDevices());
 
             // Add Fill first, then Left, then Top items (outermost added last).
             Controls.Add(_tabs);
@@ -184,14 +197,19 @@ namespace BrowseSafe
         private static (string, Func<CheckGroup>)[] One(string label, Func<CheckGroup> run)
             => new[] { (label, run) };
 
-        private ResultsView AddTab(string title, string runLabel, string intro,
+        private ResultsView AddTab(string title, string scope, string runLabel, string intro,
             (string, Func<CheckGroup>)[] steps, bool reportVerdict)
         {
             var view = new ResultsView(runLabel, intro, steps, reportVerdict);
-            var page = new TabPage(title) { UseVisualStyleBackColor = true };
+            AddViewTab(title, scope, view);
+            return view;
+        }
+
+        private void AddViewTab(string title, string scope, Control view)
+        {
+            var page = new TabPage(title) { UseVisualStyleBackColor = true, Tag = scope };
             page.Controls.Add(view);
             _tabs.TabPages.Add(page);
-            return view;
         }
 
         protected override void OnShown(EventArgs e)
@@ -204,8 +222,8 @@ namespace BrowseSafe
         private void AutoRunSelectedTab()
         {
             if (_tabs.SelectedTab?.Controls.Count > 0 &&
-                _tabs.SelectedTab.Controls[0] is ResultsView rv && !rv.HasRun)
-                _ = rv.RunAsync();
+                _tabs.SelectedTab.Controls[0] is ITabView v && !v.HasRun)
+                _ = v.RunAsync();
         }
 
         private void OnScanCompleted(CheckStatus overall)
@@ -237,6 +255,63 @@ namespace BrowseSafe
         {
             _leftPanel.Visible = !_leftPanel.Visible;
             _toggleButton.Text = _leftPanel.Visible ? "◀ Hide tools" : "▶ Show tools";
+        }
+
+        private void ShowEmailMenu()
+        {
+            var menu = new ContextMenuStrip();
+            string current = _tabs.SelectedTab?.Tag as string ?? "scan";
+            string tabName = _tabs.SelectedTab?.Text ?? current;
+            menu.Items.Add($"Current tab ({tabName})", null, (_, _) => EmailReport(current));
+            menu.Items.Add("All tabs", null, (_, _) => EmailReport("all"));
+            menu.Show(_emailButton, new Point(0, _emailButton.Height));
+        }
+
+        /// <summary>
+        /// Builds the report for the scope, saves it to a file, copies it to the
+        /// clipboard, and opens the default mail client (mailto). mailto bodies are
+        /// length-limited, so long reports are truncated in the body - the full text
+        /// is in the saved file and on the clipboard.
+        /// </summary>
+        private void EmailReport(string scope)
+        {
+            string text;
+            try { (text, _) = Reports.Build(scope); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Could not build report: " + ex.Message, "Email report",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            string file = Path.Combine(Path.GetTempPath(), $"browse-safe-{scope}-{stamp}.txt");
+            string? savedTo = null;
+            try { File.WriteAllText(file, text); savedTo = file; } catch { /* non-fatal */ }
+
+            try { Clipboard.SetText(text); } catch { /* clipboard may be locked */ }
+
+            string subject = $"Browse Safe report ({scope}) {DateTime.Now:yyyy-MM-dd HH:mm}";
+            const int maxBody = 1800; // keep the whole mailto URI under shell limits
+            string body = text.Length <= maxBody
+                ? text
+                : text.Substring(0, maxBody) +
+                  "\r\n\r\n...[truncated for email]\r\n" +
+                  (savedTo != null ? $"Full report saved to: {savedTo}\r\n" : "") +
+                  "The full report has also been copied to your clipboard - paste to include it.";
+
+            string uri = $"mailto:?subject={Uri.EscapeDataString(subject)}&body={Uri.EscapeDataString(body)}";
+            try
+            {
+                Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this,
+                    "Could not open the mail client: " + ex.Message +
+                    (savedTo != null ? $"\n\nThe report was saved to:\n{savedTo}" : ""),
+                    "Email report", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private void OpenUri(string uri)

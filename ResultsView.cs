@@ -8,12 +8,19 @@ using System.Windows.Forms;
 
 namespace BrowseSafe
 {
+    /// <summary>A tab content view that can be (re)run, with lazy first-run support.</summary>
+    public interface ITabView
+    {
+        bool HasRun { get; }
+        Task RunAsync();
+    }
+
     /// <summary>
     /// A self-contained results pane: a Run/Refresh button, a status label, and a
     /// colour-coded RichTextBox. It runs a list of named check steps on a background
     /// thread, rendering each group as it completes. Reused by every tab.
     /// </summary>
-    public sealed class ResultsView : UserControl
+    public sealed class ResultsView : UserControl, ITabView
     {
         private readonly Button _runButton;
         private readonly Label _status;

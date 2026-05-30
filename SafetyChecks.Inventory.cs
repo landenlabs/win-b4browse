@@ -39,23 +39,14 @@ namespace BrowseSafe
             }
             catch { /* ignore */ }
 
-            try
-            {
-                using var sha = SHA256.Create();
-                using var fs = File.OpenRead(exe);
-                string hash = Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
-                group.Add(CheckStatus.Info, "SHA-256", hash);
-            }
-            catch (Exception ex) { group.Add(CheckStatus.Warn, "SHA-256", ex.Message); }
+            string? hash = Sha256File(exe);
+            group.Add(hash != null ? CheckStatus.Info : CheckStatus.Warn,
+                "SHA-256", hash ?? "could not hash file");
 
             // Authenticode signature is the meaningful integrity/tamper check.
-            var sig = RunPowerShellJson(
-                $"$x=Get-AuthenticodeSignature -LiteralPath '{exe.Replace("'", "''")}'; " +
-                "[pscustomobject]@{Status=$x.Status.ToString();Signer=$x.SignerCertificate.Subject} | ConvertTo-Json -Compress");
-            if (sig != null && sig.Value.ValueKind == JsonValueKind.Object)
+            var (status, signer) = VerifyAuthenticode(exe);
+            if (status != "Unknown")
             {
-                string status = Str(sig.Value, "Status");
-                string signer = Str(sig.Value, "Signer");
                 bool google = signer.Contains("Google LLC", StringComparison.OrdinalIgnoreCase);
                 CheckStatus st = status == "Valid" && google ? CheckStatus.Pass
                                : status == "Valid" ? CheckStatus.Warn
@@ -77,72 +68,217 @@ namespace BrowseSafe
         public static CheckGroup CheckChromeExtensions()
         {
             var group = new CheckGroup("Chrome Extensions");
-
-            string userData = Environment.ExpandEnvironmentVariables(
-                @"%LOCALAPPDATA%\Google\Chrome\User Data");
-            if (!Directory.Exists(userData))
+            var exts = GetChromeExtensions();
+            if (exts.Count == 0)
             {
-                group.Add(CheckStatus.Info, "Extensions", "No Chrome user-data directory found.");
+                group.Add(CheckStatus.Pass, "Extensions", "No installed extensions found.");
                 return group;
             }
 
-            int total = 0;
-            foreach (var profile in EnumerateChromeProfiles(userData))
+            int shown = 0;
+            foreach (var x in exts.OrderBy(e => e.ProfileName).ThenBy(e => e.Name))
             {
-                string extRoot = Path.Combine(userData, profile, "Extensions");
-                if (!Directory.Exists(extRoot)) continue;
-
-                foreach (var idDir in SafeDirs(extRoot))
-                {
-                    string id = Path.GetFileName(idDir);
-                    var verDir = SafeDirs(idDir).OrderBy(d => d).LastOrDefault();
-                    if (verDir == null) continue;
-
-                    (string name, string version) = ReadManifest(Path.Combine(verDir, "manifest.json"), id);
-                    total++;
-                    if (total <= MaxList)
-                        group.Add(CheckStatus.Info, name, $"v{version}  [{profile}]  id={id}");
-                }
+                if (++shown > MaxList) break;
+                var st = x.Unsupported ? CheckStatus.Warn : CheckStatus.Info;
+                string flags = (x.Enabled ? "" : "disabled, ") + (x.Unsupported ? "MV unsupported, " : "");
+                group.Add(st, x.Name,
+                    $"v{x.Version}  MV{x.ManifestVersion?.ToString() ?? "?"}  [{x.ProfileName}]  {flags}id={x.Id}");
             }
-
-            if (total == 0)
-                group.Add(CheckStatus.Pass, "Extensions", "No installed extensions found.");
-            else
-            {
-                if (total > MaxList)
-                    group.Add(CheckStatus.Info, "...", $"{total - MaxList} more not shown.");
-                group.Add(CheckStatus.Info, "Total extensions",
-                    $"{total} extension(s). Review any you don't recognise at chrome://extensions.");
-            }
+            if (exts.Count > MaxList)
+                group.Add(CheckStatus.Info, "...", $"{exts.Count - MaxList} more not shown.");
+            group.Add(CheckStatus.Info, "Total extensions",
+                $"{exts.Count} across all profiles. Review any you don't recognise at chrome://extensions.");
             return group;
         }
 
-        private static IEnumerable<string> EnumerateChromeProfiles(string userData)
+        // ----------------------------------------------------------------- //
+        // Chrome extensions - structured (used by the Extensions grid)
+        // ----------------------------------------------------------------- //
+        public static List<ChromeExtension> GetChromeExtensions()
         {
-            yield return "Default";
-            foreach (var d in SafeDirs(userData))
+            var list = new List<ChromeExtension>();
+            string local = Environment.GetEnvironmentVariable("LOCALAPPDATA") ?? "";
+            if (local.Length == 0) return list;
+
+            string[] roots =
             {
-                string n = Path.GetFileName(d);
-                if (n.StartsWith("Profile ", StringComparison.OrdinalIgnoreCase)) yield return n;
+                Path.Combine(local, "Google", "Chrome", "User Data"),
+                Path.Combine(local, "Google", "Chrome Beta", "User Data"),
+                Path.Combine(local, "Google", "Chrome SxS", "User Data"),
+                Path.Combine(local, "Chromium", "User Data"),
+            };
+
+            foreach (var root in roots)
+            {
+                if (!Directory.Exists(root)) continue;
+                int? minMv = MinManifestVersion(ReadFirstLine(Path.Combine(root, "Last Version")));
+                var names = LoadProfileNames(root);
+
+                foreach (var profileDir in SafeDirs(root))
+                {
+                    string profile = Path.GetFileName(profileDir);
+                    if (!(profile == "Default" || profile.StartsWith("Profile", StringComparison.OrdinalIgnoreCase)))
+                        continue;
+
+                    string extRoot = Path.Combine(profileDir, "Extensions");
+                    if (!Directory.Exists(extRoot)) continue;
+
+                    var settings = LoadExtensionSettings(Path.Combine(profileDir, "Preferences"));
+                    string friendly = names.TryGetValue(profile, out var fn) && fn.Length > 0 ? fn : profile;
+
+                    foreach (var idDir in SafeDirs(extRoot))
+                    {
+                        string id = Path.GetFileName(idDir);
+                        string? verDir = SafeDirs(idDir)
+                            .Where(d => File.Exists(Path.Combine(d, "manifest.json")))
+                            .OrderBy(Path.GetFileName, StringComparer.Ordinal)
+                            .LastOrDefault();
+                        if (verDir == null) continue;
+
+                        var (name, version, desc, mv) = ParseManifest(Path.Combine(verDir, "manifest.json"), id);
+                        bool enabled = !settings.TryGetValue(id, out int state) || state == 1;
+
+                        list.Add(new ChromeExtension
+                        {
+                            ProfileDir = profile,
+                            ProfileName = friendly,
+                            Name = name,
+                            Version = version,
+                            Description = desc,
+                            Id = id,
+                            ManifestVersion = mv,
+                            Enabled = enabled,
+                            Unsupported = minMv != null && mv != null && mv < minMv,
+                        });
+                    }
+                }
             }
+            return list;
         }
 
-        private static (string Name, string Version) ReadManifest(string manifestPath, string fallbackId)
+        /// <summary>Minimum extension manifest_version this Chrome will load (per Last Version).</summary>
+        private static int? MinManifestVersion(string? chromeVersion)
+        {
+            if (string.IsNullOrEmpty(chromeVersion)) return null;
+            if (!int.TryParse(chromeVersion.Split('.')[0], out int major)) return null;
+            return major >= 127 ? 3 : 2; // Chrome 127+ disables MV2 by default; 138+ removes it
+        }
+
+        private static string? ReadFirstLine(string path)
+        {
+            try { return File.Exists(path) ? File.ReadLines(path).FirstOrDefault()?.Trim() : null; }
+            catch { return null; }
+        }
+
+        /// <summary>profile-dir -> friendly name, from Local State (info_cache) then per-profile Preferences.</summary>
+        private static Dictionary<string, string> LoadProfileNames(string root)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                string ls = Path.Combine(root, "Local State");
+                if (File.Exists(ls))
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(ls));
+                    if (doc.RootElement.TryGetProperty("profile", out var prof) &&
+                        prof.TryGetProperty("info_cache", out var cache) &&
+                        cache.ValueKind == JsonValueKind.Object)
+                    {
+                        foreach (var p in cache.EnumerateObject())
+                        {
+                            string nm = JStr(p.Value, "name");
+                            if (nm.Length == 0) nm = JStr(p.Value, "shortcut_name");
+                            if (nm.Length == 0) nm = JStr(p.Value, "gaia_name");
+                            if (nm.Length > 0) map[p.Name] = nm;
+                        }
+                    }
+                }
+            }
+            catch { /* ignore */ }
+            return map;
+        }
+
+        /// <summary>extension-id -> state (1=enabled, 0=disabled) from a profile's Preferences.</summary>
+        private static Dictionary<string, int> LoadExtensionSettings(string prefsPath)
+        {
+            var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                if (!File.Exists(prefsPath)) return map;
+                using var doc = JsonDocument.Parse(File.ReadAllText(prefsPath));
+                if (doc.RootElement.TryGetProperty("extensions", out var ex) &&
+                    ex.TryGetProperty("settings", out var s) && s.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var p in s.EnumerateObject())
+                        if (p.Value.TryGetProperty("state", out var st) && st.TryGetInt32(out int v))
+                            map[p.Name] = v;
+                }
+            }
+            catch { /* ignore */ }
+            return map;
+        }
+
+        private static (string Name, string Version, string Desc, int? Mv) ParseManifest(string path, string fallbackId)
         {
             try
             {
-                if (!File.Exists(manifestPath)) return (fallbackId, "?");
-                using var doc = JsonDocument.Parse(File.ReadAllText(manifestPath));
+                using var doc = JsonDocument.Parse(File.ReadAllText(path));
                 var root = doc.RootElement;
                 string name = root.TryGetProperty("name", out var n) ? (n.GetString() ?? "") : "";
                 string version = root.TryGetProperty("version", out var v) ? (v.GetString() ?? "?") : "?";
-                // Localised names (__MSG_*) need _locales lookup; fall back to the id.
-                if (name.StartsWith("__MSG_", StringComparison.OrdinalIgnoreCase) || name.Length == 0)
-                    name = fallbackId;
-                return (name, version);
+                string desc = root.TryGetProperty("description", out var d) ? (d.GetString() ?? "") : "";
+                int? mv = root.TryGetProperty("manifest_version", out var m) && m.TryGetInt32(out int mi) ? mi : null;
+                string locale = root.TryGetProperty("default_locale", out var dl) ? (dl.GetString() ?? "") : "";
+
+                string extRoot = Path.GetDirectoryName(path) ?? "";
+                name = ResolveMsg(extRoot, name, locale);
+                desc = ResolveMsg(extRoot, desc, locale);
+                if (name.Length == 0 || name.StartsWith("__MSG_", StringComparison.OrdinalIgnoreCase)) name = fallbackId;
+                return (name, version, desc, mv);
             }
-            catch { return (fallbackId, "?"); }
+            catch { return (fallbackId, "?", "", null); }
         }
+
+        /// <summary>Resolves a Chrome __MSG_key__ string via _locales/&lt;locale&gt;/messages.json.</summary>
+        private static string ResolveMsg(string extRoot, string value, string defaultLocale)
+        {
+            if (!value.StartsWith("__MSG_", StringComparison.Ordinal) || !value.EndsWith("__", StringComparison.Ordinal))
+                return value;
+            string key = value.Substring(6, value.Length - 8);
+            if (key.Length == 0) return value;
+
+            string localesDir = Path.Combine(extRoot, "_locales");
+            if (!Directory.Exists(localesDir)) return value;
+
+            var candidates = new List<string>();
+            if (defaultLocale.Length > 0)
+            {
+                candidates.Add(defaultLocale);
+                candidates.Add(defaultLocale.Replace('-', '_'));
+                string fam = defaultLocale.Split('-', '_')[0];
+                if (fam.Length > 0) candidates.Add(fam);
+            }
+            foreach (var l in new[] { "en", "en_US", "en_GB" }) candidates.Add(l);
+
+            foreach (var loc in candidates)
+            {
+                string msgs = Path.Combine(localesDir, loc, "messages.json");
+                if (!File.Exists(msgs)) continue;
+                try
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(msgs));
+                    foreach (var p in doc.RootElement.EnumerateObject())
+                        if (string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase) &&
+                            p.Value.TryGetProperty("message", out var msg))
+                            return msg.GetString() ?? value;
+                }
+                catch { /* try next locale */ }
+            }
+            return value;
+        }
+
+        private static string JStr(JsonElement e, string p) =>
+            e.TryGetProperty(p, out var v) && v.ValueKind == JsonValueKind.String ? (v.GetString() ?? "") : "";
 
         // ----------------------------------------------------------------- //
         // Services
@@ -274,45 +410,150 @@ namespace BrowseSafe
         {
             var group = new CheckGroup("Installed Programs (most recent first)");
 
-            var rows = RunPowerShellArray(
-                "$k='HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'," +
-                "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'," +
-                "'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'; " +
-                "@(Get-ItemProperty $k -ErrorAction SilentlyContinue | Where-Object {$_.DisplayName} | " +
-                "Select-Object DisplayName,DisplayVersion,Publisher,InstallDate) | ConvertTo-Json -Compress -Depth 3");
-
-            if (rows.Count == 0)
+            var progs = GetInstalledPrograms();
+            if (progs.Count == 0)
             {
                 group.Add(CheckStatus.Warn, "Installed programs", "Could not enumerate installed programs.");
                 return group;
             }
 
-            // Sort newest-first by parsed yyyyMMdd; entries with no/odd date sort to the bottom.
-            static int InstallDateKey(JsonElement r)
-            {
-                string d = Str(r, "InstallDate");
-                return d.Length == 8 && int.TryParse(d, out int n) ? n : 0;
-            }
-            var ordered = rows.OrderByDescending(InstallDateKey).ToList();
-
-            int recentCutoff = int.Parse(DateTime.Now.AddDays(-14).ToString("yyyyMMdd"));
+            var ordered = progs.OrderByDescending(p => p.SortDate).ToList();
             int shown = 0;
-            foreach (var r in ordered)
+            foreach (var p in ordered)
             {
                 if (++shown > MaxList) break;
-                string date = Str(r, "InstallDate");
-                bool recent = int.TryParse(date, out int d) && d >= recentCutoff;
-                string ver = Str(r, "DisplayVersion");
-                string pub = Str(r, "Publisher");
-                group.Add(recent ? CheckStatus.Warn : CheckStatus.Info,
-                    Str(r, "DisplayName"),
-                    $"{FormatDate(date)}  v{ver}" + (pub.Length > 0 ? $"  -  {pub}" : "") +
-                    (recent ? "   (installed in last 14 days)" : ""));
+                bool recent = p.DaysOld is < 14;
+                group.Add(recent ? CheckStatus.Warn : CheckStatus.Info, p.Name,
+                    $"{p.InstalledText}  v{p.Version}" +
+                    (p.Publisher.Length > 0 ? $"  -  {p.Publisher}" : "") +
+                    (recent ? "   (installed/changed in last 14 days)" : ""));
             }
-            if (rows.Count > MaxList)
-                group.Add(CheckStatus.Info, "...", $"{rows.Count - MaxList} more not shown.");
-            group.Add(CheckStatus.Info, "Total installed", $"{rows.Count} program(s) registered.");
+            if (progs.Count > MaxList)
+                group.Add(CheckStatus.Info, "...", $"{progs.Count - MaxList} more not shown.");
+            group.Add(CheckStatus.Info, "Total installed", $"{progs.Count} program(s) registered.");
             return group;
+        }
+
+        /// <summary>
+        /// Structured list of installed programs (used by the Installed tab's grid).
+        /// Deduplicates by name+version and resolves a best-effort executable path.
+        /// </summary>
+        public static List<InstalledProgram> GetInstalledPrograms()
+        {
+            var rows = RunPowerShellArray(
+                "$k='HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'," +
+                "'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'," +
+                "'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*'; " +
+                "@(Get-ItemProperty $k -ErrorAction SilentlyContinue | Where-Object {$_.DisplayName} | " +
+                "Select-Object DisplayName,DisplayVersion,Publisher,InstallDate,Comments,DisplayIcon,InstallLocation) | " +
+                "ConvertTo-Json -Compress -Depth 3");
+
+            var list = new List<InstalledProgram>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in rows)
+            {
+                string name = Str(r, "DisplayName");
+                if (name.Length == 0) continue;
+                string ver = Str(r, "DisplayVersion");
+                if (!seen.Add(name + "|" + ver)) continue;
+
+                var p = new InstalledProgram
+                {
+                    Name = name,
+                    Version = ver,
+                    Publisher = Str(r, "Publisher"),
+                    Description = FirstNonEmpty(Str(r, "Comments"), Str(r, "Publisher")),
+                    InstallLocation = Str(r, "InstallLocation"),
+                    DisplayIcon = Str(r, "DisplayIcon"),
+                };
+                p.ExePath = ExeFromDisplayIcon(p.DisplayIcon);
+
+                DateTime? d = ParseYmd(Str(r, "InstallDate"));
+                if (d == null && p.ExePath != null)
+                {
+                    try { d = File.GetLastWriteTime(p.ExePath); } catch { /* ignore */ }
+                }
+                p.InstallDate = d;
+                p.SortDate = d ?? DateTime.MinValue;
+                p.DaysOld = d != null ? Math.Max(0, (int)(DateTime.Now - d.Value).TotalDays) : null;
+                p.InstalledText = d != null ? d.Value.ToString("yyyy-MM-dd") : "—";
+
+                list.Add(p);
+            }
+            return list;
+        }
+
+        /// <summary>Verifies a file's Authenticode signature (WinVerifyTrust). Returns (status, signerSubject).</summary>
+        public static (string Status, string Signer) VerifyAuthenticode(string path)
+        {
+            var e = RunPowerShellJson(
+                $"$x=Get-AuthenticodeSignature -LiteralPath '{path.Replace("'", "''")}'; " +
+                "[pscustomobject]@{Status=$x.Status.ToString();Signer=$x.SignerCertificate.Subject} | ConvertTo-Json -Compress");
+            if (e != null && e.Value.ValueKind == JsonValueKind.Object)
+                return (Str(e.Value, "Status"), Str(e.Value, "Signer"));
+            return ("Unknown", "");
+        }
+
+        /// <summary>SHA-256 of a file as lowercase hex, or null on error.</summary>
+        public static string? Sha256File(string path)
+        {
+            try
+            {
+                using var sha = SHA256.Create();
+                using var fs = File.OpenRead(path);
+                return Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Resolves an executable to scan for a program (DisplayIcon, then InstallLocation search).</summary>
+        public static string? ResolveExeForScan(InstalledProgram p)
+        {
+            if (p.ExePath != null && File.Exists(p.ExePath)) return p.ExePath;
+
+            string loc = p.InstallLocation.Trim().Trim('"');
+            if (loc.Length == 0 || !Directory.Exists(loc)) return null;
+
+            List<string> exes;
+            try { exes = Directory.EnumerateFiles(loc, "*.exe", SearchOption.AllDirectories).Take(500).ToList(); }
+            catch
+            {
+                try { exes = Directory.EnumerateFiles(loc, "*.exe").ToList(); }
+                catch { return null; }
+            }
+            if (exes.Count == 0) return null;
+
+            string token = new string(p.Name.TakeWhile(char.IsLetterOrDigit).ToArray());
+            string? match = token.Length >= 3
+                ? exes.FirstOrDefault(f => Path.GetFileNameWithoutExtension(f)
+                    .Contains(token, StringComparison.OrdinalIgnoreCase))
+                : null;
+            return match ?? exes.OrderByDescending(FileSize).First();
+        }
+
+        private static long FileSize(string f)
+        {
+            try { return new FileInfo(f).Length; } catch { return 0; }
+        }
+
+        private static string? ExeFromDisplayIcon(string icon)
+        {
+            if (string.IsNullOrWhiteSpace(icon)) return null;
+            string p = icon.Trim().Trim('"');
+            int comma = p.LastIndexOf(',');
+            if (comma > 0 && int.TryParse(p.AsSpan(comma + 1), out _)) p = p.Substring(0, comma);
+            p = p.Trim().Trim('"');
+            return p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(p) ? p : null;
+        }
+
+        private static DateTime? ParseYmd(string s) =>
+            s.Length == 8 && DateTime.TryParseExact(s, "yyyyMMdd", null,
+                System.Globalization.DateTimeStyles.None, out var d) ? d : null;
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            foreach (var v in values) if (!string.IsNullOrWhiteSpace(v)) return v;
+            return "";
         }
 
         // ----------------------------------------------------------------- //
@@ -321,42 +562,82 @@ namespace BrowseSafe
         public static CheckGroup CheckDevices()
         {
             var group = new CheckGroup("Device Drivers (third-party)");
-
-            var rows = RunPowerShellArray(
-                "@(Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue | " +
-                "Where-Object {$_.DeviceName} | " +
-                "Select-Object DeviceName,DriverProviderName,DriverVersion,IsSigned) | " +
-                "ConvertTo-Json -Compress -Depth 3");
-
-            int total = rows.Count;
-            if (total == 0)
+            var drivers = GetDevices();
+            if (drivers.Count == 0)
             {
                 group.Add(CheckStatus.Warn, "Drivers", "Could not enumerate device drivers.");
                 return group;
             }
 
-            var thirdParty = rows.Where(r =>
-            {
-                string prov = Str(r, "DriverProviderName");
-                return prov.Length > 0 && !prov.Equals("Microsoft", StringComparison.OrdinalIgnoreCase);
-            }).ToList();
+            var thirdParty = drivers
+                .Where(d => d.Provider.Length > 0 && !d.Provider.Equals("Microsoft", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(d => d.LocalSort)
+                .ToList();
 
             group.Add(CheckStatus.Info, "Driver inventory",
-                $"{total} signed drivers total, {thirdParty.Count} from third-party providers.");
+                $"{drivers.Count} signed drivers total, {thirdParty.Count} from third-party providers.");
 
             int shown = 0;
-            foreach (var r in thirdParty)
+            foreach (var d in thirdParty)
             {
                 if (++shown > MaxList) break;
-                bool signed = r.TryGetProperty("IsSigned", out var s) && s.ValueKind == JsonValueKind.True;
-                group.Add(signed ? CheckStatus.Info : CheckStatus.Warn,
-                    Str(r, "DeviceName"),
-                    $"{Str(r, "DriverProviderName")}  v{Str(r, "DriverVersion")}" +
-                    (signed ? "" : "   (UNSIGNED)"));
+                group.Add(d.Signed ? CheckStatus.Info : CheckStatus.Warn, d.Device,
+                    $"{d.Provider}  v{d.Version}  vendor {d.VendorDateText}  changed {d.LocalChangedText}" +
+                    (d.Signed ? "" : "   (UNSIGNED)"));
             }
             if (thirdParty.Count > MaxList)
                 group.Add(CheckStatus.Info, "...", $"{thirdParty.Count - MaxList} more not shown.");
             return group;
+        }
+
+        /// <summary>Structured driver list (used by the Devices grid). Includes the local INF change time.</summary>
+        public static List<DeviceDriver> GetDevices()
+        {
+            var rows = RunPowerShellArray(
+                "@(Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue | " +
+                "Where-Object {$_.DeviceName} | ForEach-Object { [pscustomobject]@{ " +
+                "Device=$_.DeviceName; Provider=$_.DriverProviderName; Version=$_.DriverVersion; " +
+                "Signed=[bool]$_.IsSigned; Inf=$_.InfName; " +
+                "VendorDate=$(if($_.DriverDate){$_.DriverDate.ToString('yyyy-MM-dd')}else{''}) } }) | " +
+                "ConvertTo-Json -Compress -Depth 3");
+
+            string infDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "INF");
+            var list = new List<DeviceDriver>();
+            foreach (var r in rows)
+            {
+                var d = new DeviceDriver
+                {
+                    Device = Str(r, "Device"),
+                    Provider = Str(r, "Provider"),
+                    Version = Str(r, "Version"),
+                    Signed = r.TryGetProperty("Signed", out var s) && s.ValueKind == JsonValueKind.True,
+                    InfName = Str(r, "Inf"),
+                    VendorDateText = Str(r, "VendorDate"),
+                };
+                if (DateTime.TryParse(d.VendorDateText, out var vd)) d.VendorDate = vd;
+
+                if (d.InfName.Length > 0)
+                {
+                    string infPath = Path.Combine(infDir, d.InfName);
+                    try
+                    {
+                        if (File.Exists(infPath))
+                        {
+                            DateTime lw = File.GetLastWriteTime(infPath);
+                            d.LocalChanged = lw;
+                            d.LocalChangedText = lw.ToString("yyyy-MM-dd");
+                        }
+                    }
+                    catch { /* ignore */ }
+                }
+                if (d.LocalChangedText.Length == 0) d.LocalChangedText = "—";
+                d.LocalSort = d.LocalChanged ?? DateTime.MinValue;
+                d.DaysOld = d.LocalChanged != null
+                    ? Math.Max(0, (int)(DateTime.Now - d.LocalChanged.Value).TotalDays) : null;
+
+                list.Add(d);
+            }
+            return list;
         }
 
         // ----------------------------------------------------------------- //

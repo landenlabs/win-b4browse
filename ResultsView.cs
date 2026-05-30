@@ -13,6 +13,12 @@ namespace BrowseSafe
     {
         bool HasRun { get; }
         Task RunAsync();
+
+        /// <summary>Worst state detected on this tab (drives the tab header colour).</summary>
+        TabSeverity Severity { get; }
+
+        /// <summary>Raised when <see cref="Severity"/> changes (after a run).</summary>
+        event Action? SeverityChanged;
     }
 
     /// <summary>
@@ -36,6 +42,9 @@ namespace BrowseSafe
 
         /// <summary>True once the view has completed at least one run (for lazy auto-run).</summary>
         public bool HasRun { get; private set; }
+
+        public TabSeverity Severity { get; private set; } = TabSeverity.None;
+        public event Action? SeverityChanged;
 
         /// <summary>Raised with the overall verdict after a run (only when reportVerdict is set).</summary>
         public event Action<CheckStatus>? Completed;
@@ -138,6 +147,8 @@ namespace BrowseSafe
                 _runButton.Enabled = true;
                 _running = false;
             }
+            Severity = Sev.FromStatus(overall);
+            SeverityChanged?.Invoke();
             if (_reportVerdict) Completed?.Invoke(overall);
         }
 

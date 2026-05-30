@@ -36,6 +36,13 @@ namespace BrowseSafe
         private readonly Func<CheckGroup>? _headerInfo;
         private readonly RichTextBox? _header;
         private readonly BusyOverlay _busy = new();
+        private readonly Func<IReadOnlyList<object>, TabSeverity>? _severityEval;
+        private readonly Action<object>? _onRowContext;
+        private readonly CheckBox? _toggle;
+        private readonly Func<object, bool>? _hideWhenOff;
+
+        public TabSeverity Severity { get; private set; } = TabSeverity.None;
+        public event Action? SeverityChanged;
 
         private static readonly Color HdrPass = Color.FromArgb(0, 140, 0);
         private static readonly Color HdrWarn = Color.FromArgb(190, 120, 0);
@@ -60,13 +67,19 @@ namespace BrowseSafe
             IEnumerable<(string Label, Action OnClick)>? extraButtons = null,
             string? legend = null,
             Func<string>? summary = null,
-            Func<CheckGroup>? headerInfo = null)
+            Func<CheckGroup>? headerInfo = null,
+            Func<IReadOnlyList<object>, TabSeverity>? severity = null,
+            Action<object>? onRowContext = null,
+            (string Label, Func<object, bool> HideWhenOff)? showAllToggle = null,
+            (string Label, Action OnClick)? headerButton = null)
         {
             _loader = loader;
             _cols = columns;
             _onButton = onButtonClick;
             _summary = summary;
             _headerInfo = headerInfo;
+            _severityEval = severity;
+            _onRowContext = onRowContext;
             _sortCol = defaultSortColumn;
             _asc = defaultAscending;
 
@@ -74,34 +87,46 @@ namespace BrowseSafe
             BackColor = Color.White;
 
             var top = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Color.FromArgb(245, 245, 245) };
+
+            int x = 8;
+            if (showAllToggle is { } st)
+            {
+                _hideWhenOff = st.HideWhenOff;
+                int w = TextRenderer.MeasureText(st.Label, Font).Width + 26;
+                _toggle = new CheckBox { Text = st.Label, Left = x, Top = 9, Width = w, Height = 24, Checked = false };
+                _toggle.CheckedChanged += (_, _) => Populate();
+                top.Controls.Add(_toggle);
+                x += w + 8;
+            }
+
             _refresh = new Button
             {
-                Text = runLabel, Width = 90, Height = 28, Left = 8, Top = 6,
+                Text = runLabel, Width = 90, Height = 28, Left = x, Top = 6,
                 FlatStyle = FlatStyle.System, Font = new Font("Segoe UI", 9f, FontStyle.Bold),
             };
             _refresh.Click += async (_, _) => await RunAsync();
             top.Controls.Add(_refresh);
+            x = _refresh.Right + 6;
 
-            int left = 104;
             if (extraButtons != null)
             {
                 foreach (var (label, onClick) in extraButtons)
                 {
                     var b = new Button
                     {
-                        Text = label, Height = 28, Top = 6, Left = left,
+                        Text = label, Height = 28, Top = 6, Left = x,
                         Width = TextRenderer.MeasureText(label, Font).Width + 28,
                         FlatStyle = FlatStyle.System,
                     };
                     b.Click += (_, _) => onClick();
                     top.Controls.Add(b);
-                    left += b.Width + 6;
+                    x += b.Width + 6;
                 }
             }
 
             _status = new Label
             {
-                AutoSize = true, Left = left + 4, Top = 12, ForeColor = Color.Gray,
+                AutoSize = true, Left = x + 4, Top = 12, ForeColor = Color.Gray,
                 Text = "Click " + runLabel + ".",
             };
             top.Controls.Add(_status);
@@ -163,14 +188,15 @@ namespace BrowseSafe
 
             _grid.ColumnHeaderMouseClick += OnHeaderClick;
             _grid.CellContentClick += OnCellClick;
+            _grid.CellMouseDown += OnCellMouseDown;
 
             Controls.Add(_grid);
             if (_headerInfo != null)
             {
+                var headerPanel = new Panel { Dock = DockStyle.Top, Height = 104, BackColor = Color.FromArgb(250, 250, 250) };
                 _header = new RichTextBox
                 {
-                    Dock = DockStyle.Top,
-                    Height = 104,
+                    Dock = DockStyle.Fill,
                     ReadOnly = true,
                     BorderStyle = BorderStyle.None,
                     Font = new Font("Consolas", 9f),
@@ -178,7 +204,21 @@ namespace BrowseSafe
                     WordWrap = false,
                     ScrollBars = RichTextBoxScrollBars.Vertical,
                 };
-                Controls.Add(_header);
+                headerPanel.Controls.Add(_header);
+                if (headerButton is { } hb)
+                {
+                    // Reserve a left gutter and place the button beside the "Path" row.
+                    headerPanel.Padding = new Padding(86, 0, 0, 0);
+                    var b = new Button
+                    {
+                        Text = hb.Label, Left = 8, Top = 26, Width = 70, Height = 26,
+                        FlatStyle = FlatStyle.System,
+                    };
+                    b.Click += (_, _) => hb.OnClick();
+                    headerPanel.Controls.Add(b);
+                    b.BringToFront();
+                }
+                Controls.Add(headerPanel);
             }
             Controls.Add(top);
 
@@ -228,6 +268,8 @@ namespace BrowseSafe
                 _refresh.Enabled = true;
                 _loading = false;
             }
+            Severity = _severityEval?.Invoke(_items) ?? TabSeverity.None;
+            SeverityChanged?.Invoke();
         }
 
         private string SafeSummary()
@@ -278,8 +320,10 @@ namespace BrowseSafe
         {
             _grid.SuspendLayout();
             _grid.Rows.Clear();
+            bool filtering = _toggle is { Checked: false } && _hideWhenOff != null;
             foreach (var item in _items)
             {
+                if (filtering && _hideWhenOff!(item)) continue;
                 var values = new object[_cols.Length];
                 for (int i = 0; i < _cols.Length; i++)
                     values[i] = _cols[i].Button ? _cols[i].ButtonText : _cols[i].Text(item);
@@ -345,6 +389,17 @@ namespace BrowseSafe
                 _grid.ClearSelection();
                 _grid.Rows[e.RowIndex].Selected = true;
                 _onButton(item);
+            }
+        }
+
+        private void OnCellMouseDown(object? sender, DataGridViewCellMouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Right || e.RowIndex < 0 || _onRowContext == null) return;
+            if (_grid.Rows[e.RowIndex].Tag is { } item)
+            {
+                _grid.ClearSelection();
+                _grid.Rows[e.RowIndex].Selected = true;
+                _onRowContext(item);
             }
         }
     }

@@ -10,6 +10,7 @@ namespace BrowseSafe
         public string Version = "";
         public bool Signed;
         public string InfName = "";
+        public string InfPath = "";       // full path to the INF in %WINDIR%\INF
 
         public DateTime? VendorDate;
         public string VendorDateText = "";

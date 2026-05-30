@@ -24,10 +24,6 @@ namespace BrowseSafe
         private readonly TabControl _tabs;
         private readonly ResultsView _scanView;
 
-        private static readonly Color ColorPass = Color.FromArgb(0, 140, 0);
-        private static readonly Color ColorWarn = Color.FromArgb(190, 120, 0);
-        private static readonly Color ColorFail = Color.FromArgb(200, 0, 0);
-
         // Windows Security deep-link pages (windowsdefender: protocol).
         private static readonly (string Label, string Uri)[] SecurityShortcuts =
         {
@@ -168,21 +164,26 @@ namespace BrowseSafe
             _leftPanel.Controls.Add(flow);
             _leftPanel.Controls.Add(leftHeader);
 
-            // -- Tabs --
-            _tabs = new TabControl { Dock = DockStyle.Fill };
-            _tabs.SelectedIndexChanged += (_, _) => AutoRunSelectedTab();
+            // -- Tabs (owner-drawn so they can be colour-coded by worst state) --
+            _tabs = new TabControl
+            {
+                Dock = DockStyle.Fill,
+                Font = new Font("Segoe UI", 11.25f),   // ~25% larger than the 9pt default
+                DrawMode = TabDrawMode.OwnerDrawFixed,
+                SizeMode = TabSizeMode.Normal,
+                Padding = new Point(16, 5),
+            };
+            _tabs.DrawItem += DrawTab;
+            _tabs.SelectedIndexChanged += (_, _) => { AutoRunSelectedTab(); UpdateBanner(); _tabs.Invalidate(); };
 
             _scanView = AddTab("Safety Scan", "scan", "Run Safety Checks",
                 "Click to scan.", ScanSteps(), reportVerdict: true);
             _scanView.Completed += OnScanCompleted;
 
             AddViewTab("Chrome", "chrome", TabViews.BuildChrome());
-            AddTab("Services", "services", "Refresh", "Click to list services.",
-                One("services", SafetyChecks.CheckServices), false);
-            AddTab("Processes", "processes", "Refresh", "Click to list processes.",
-                One("processes", SafetyChecks.CheckProcesses), false);
-            AddTab("Startup", "startup", "Refresh", "Click to list startup items.",
-                One("startup", SafetyChecks.CheckStartup), false);
+            AddViewTab("Services", "services", TabViews.BuildServices());
+            AddViewTab("Processes", "processes", TabViews.BuildProcesses());
+            AddViewTab("Startup", "startup", TabViews.BuildStartup());
             AddViewTab("Installed", "installed", TabViews.BuildInstalled());
             AddViewTab("Devices", "devices", TabViews.BuildDevices());
 
@@ -191,6 +192,8 @@ namespace BrowseSafe
             Controls.Add(_leftPanel);
             Controls.Add(toolbar);
             Controls.Add(_banner);
+
+            UpdateBanner(); // initial title for the active (Safety Scan) tab
         }
 
         /// <summary>The full safety scan, as labelled steps rendered incrementally.</summary>
@@ -224,6 +227,29 @@ namespace BrowseSafe
             var page = new TabPage(title) { UseVisualStyleBackColor = true, Tag = scope };
             page.Controls.Add(view);
             _tabs.TabPages.Add(page);
+            if (view is ITabView tv)
+                tv.SeverityChanged += () =>
+                {
+                    if (_tabs.IsHandleCreated)
+                        _tabs.BeginInvoke(new Action(() => { _tabs.Invalidate(); UpdateBanner(); }));
+                };
+        }
+
+        /// <summary>Owner-draws a tab header tinted by the worst state detected on that tab.</summary>
+        private void DrawTab(object? sender, DrawItemEventArgs e)
+        {
+            var page = _tabs.TabPages[e.Index];
+            bool selected = e.Index == _tabs.SelectedIndex;
+            TabSeverity sev = page.Controls.Count > 0 && page.Controls[0] is ITabView v
+                ? v.Severity : TabSeverity.None;
+
+            Color back = SeverityColor(sev, selected);
+            var r = e.Bounds;
+            using (var b = new SolidBrush(back)) e.Graphics.FillRectangle(b, r);
+            using (var pen = new Pen(Color.FromArgb(210, 210, 210))) e.Graphics.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
+
+            TextRenderer.DrawText(e.Graphics, page.Text, _tabs.Font, r, Color.Black,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         }
 
         protected override void OnShown(EventArgs e)
@@ -240,29 +266,44 @@ namespace BrowseSafe
                 _ = v.RunAsync();
         }
 
-        private void OnScanCompleted(CheckStatus overall)
+        // Descriptive banner title per tab (keyed by scope tag).
+        private static readonly Dictionary<string, string> BannerTitles = new()
         {
-            switch (overall)
-            {
-                case CheckStatus.Fail:
-                    SetBanner("NOT SAFE  -  resolve the FAIL items before browsing", ColorFail);
-                    _chromeButton.Enabled = false;
-                    break;
-                case CheckStatus.Warn:
-                    SetBanner("CAUTION  -  review the WARN items", ColorWarn);
-                    _chromeButton.Enabled = true;
-                    break;
-                default:
-                    SetBanner("SAFE  -  all checks passed", ColorPass);
-                    _chromeButton.Enabled = true;
-                    break;
-            }
+            ["scan"] = "Local network configuration",
+            ["chrome"] = "Chrome browser and extensions",
+            ["services"] = "3rd party background services",
+            ["processes"] = "Running processes",
+            ["startup"] = "Startup on login",
+            ["installed"] = "Installed program changes",
+            ["devices"] = "Installed device changes",
+        };
+
+        /// <summary>Tab/banner background colour for a severity (selected = stronger shade).</summary>
+        private static Color SeverityColor(TabSeverity sev, bool selected) => sev switch
+        {
+            TabSeverity.Alert => selected ? Color.FromArgb(250, 170, 170) : Color.FromArgb(252, 214, 214),
+            TabSeverity.Caution => selected ? Color.FromArgb(252, 226, 140) : Color.FromArgb(255, 244, 200),
+            TabSeverity.Ok => selected ? Color.FromArgb(190, 230, 190) : Color.FromArgb(224, 244, 224),
+            _ => selected ? Color.White : Color.FromArgb(238, 238, 238),
+        };
+
+        /// <summary>Banner shows the active tab's title; its colour matches that tab once it has run.</summary>
+        private void UpdateBanner()
+        {
+            var page = _tabs.SelectedTab;
+            if (page == null) return;
+            string scope = page.Tag as string ?? "";
+            TabSeverity sev = page.Controls.Count > 0 && page.Controls[0] is ITabView v ? v.Severity : TabSeverity.None;
+
+            _banner.Text = BannerTitles.TryGetValue(scope, out var title) ? title : page.Text;
+            _banner.BackColor = sev == TabSeverity.None ? Color.FromArgb(210, 214, 219) : SeverityColor(sev, true);
+            _banner.ForeColor = Color.FromArgb(40, 40, 40);
         }
 
-        private void SetBanner(string text, Color back)
+        private void OnScanCompleted(CheckStatus overall)
         {
-            _banner.Text = text;
-            _banner.BackColor = back;
+            // The banner is driven by the active tab; here we only gate the Launch Chrome button.
+            _chromeButton.Enabled = overall != CheckStatus.Fail;
         }
 
         private void ToggleLeftPanel()

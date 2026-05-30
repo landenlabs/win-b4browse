@@ -2,8 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Microsoft.Win32;
 
 namespace BrowseSafe
 {
@@ -293,40 +296,89 @@ namespace BrowseSafe
         public static CheckGroup CheckServices()
         {
             var group = new CheckGroup("Services (third-party, running)");
+            var services = GetServices();
+            if (services.Count == 0)
+            {
+                group.Add(CheckStatus.Warn, "Services", "Could not enumerate services.");
+                return group;
+            }
 
+            string sysRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            var thirdParty = services
+                .Where(s => s.State == "Running" && s.ExePath.Length > 0 &&
+                            s.ExePath.IndexOf(sysRoot, StringComparison.OrdinalIgnoreCase) < 0)
+                .OrderByDescending(s => s.ModifiedSort)
+                .ToList();
+
+            group.Add(CheckStatus.Info, "Service inventory",
+                $"{services.Count} services total, {thirdParty.Count} third-party running (outside {sysRoot}).");
+
+            int shown = 0;
+            foreach (var s in thirdParty)
+            {
+                if (++shown > MaxList) break;
+                string disp = s.DisplayName.Length > 0 ? s.DisplayName : s.Name;
+                group.Add(CheckStatus.Info, disp,
+                    $"{s.StartMode}  -  modified {s.ModifiedText}  -  {s.ExePath}");
+            }
+            if (thirdParty.Count > MaxList)
+                group.Add(CheckStatus.Info, "...", $"{thirdParty.Count - MaxList} more not shown.");
+            return group;
+        }
+
+        /// <summary>Structured service list (used by the Services grid), with executable modify dates.</summary>
+        public static List<ServiceInfo> GetServices()
+        {
             var rows = RunPowerShellArray(
                 "@(Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,PathName) | " +
                 "ConvertTo-Json -Compress -Depth 3");
 
-            int total = rows.Count;
-            string sysRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-
-            var thirdParty = rows.Where(r =>
+            var list = new List<ServiceInfo>();
+            foreach (var r in rows)
             {
-                string state = Str(r, "State");
-                string path = Str(r, "PathName");
-                return state == "Running" && path.Length > 0 &&
-                       path.IndexOf(sysRoot, StringComparison.OrdinalIgnoreCase) < 0;
-            }).ToList();
-
-            group.Add(CheckStatus.Info, "Service inventory",
-                $"{total} services total, {thirdParty.Count} third-party running (outside {sysRoot}).");
-
-            int shown = 0;
-            foreach (var r in thirdParty)
-            {
-                if (++shown > MaxList) break;
-                string disp = Str(r, "DisplayName");
-                if (disp.Length == 0) disp = Str(r, "Name");
-                group.Add(CheckStatus.Info, disp,
-                    $"{Str(r, "StartMode")}  -  {CleanPath(Str(r, "PathName"))}");
+                var s = new ServiceInfo
+                {
+                    Name = Str(r, "Name"),
+                    DisplayName = Str(r, "DisplayName"),
+                    State = Str(r, "State"),
+                    StartMode = Str(r, "StartMode"),
+                    PathRaw = Str(r, "PathName"),
+                };
+                s.ExePath = ExtractExe(s.PathRaw);
+                if (s.ExePath.Length > 0)
+                {
+                    try { s.Dir = Path.GetDirectoryName(s.ExePath) ?? ""; } catch { /* ignore */ }
+                    try
+                    {
+                        if (File.Exists(s.ExePath))
+                        {
+                            DateTime lw = File.GetLastWriteTime(s.ExePath);
+                            s.Modified = lw;
+                            s.ModifiedText = lw.ToString("yyyy-MM-dd");
+                        }
+                    }
+                    catch { /* ignore */ }
+                }
+                s.ModifiedSort = s.Modified ?? DateTime.MinValue;
+                s.DaysOld = s.Modified != null ? Math.Max(0, (int)(DateTime.Now - s.Modified.Value).TotalDays) : null;
+                list.Add(s);
             }
-            if (thirdParty.Count > MaxList)
-                group.Add(CheckStatus.Info, "...", $"{thirdParty.Count - MaxList} more not shown.");
-            if (total == 0)
-                group.Add(CheckStatus.Warn, "Services", "Could not enumerate services.");
+            return list;
+        }
 
-            return group;
+        /// <summary>Extracts the executable path from a service ImagePath (handles quotes and arguments).</summary>
+        private static string ExtractExe(string imagePath)
+        {
+            string p = imagePath.Trim();
+            if (p.StartsWith("\""))
+            {
+                int end = p.IndexOf('"', 1);
+                if (end > 0) return p.Substring(1, end - 1);
+            }
+            int exe = p.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+            if (exe >= 0) return p.Substring(0, exe + 4);
+            int sp = p.IndexOf(' ');
+            return sp > 0 ? p.Substring(0, sp) : p;
         }
 
         // ----------------------------------------------------------------- //
@@ -335,46 +387,79 @@ namespace BrowseSafe
         public static CheckGroup CheckProcesses()
         {
             var group = new CheckGroup("Processes (non-standard locations)");
+            var procs = GetProcesses();
+            int total = procs.Count;
 
-            var rows = RunPowerShellArray(
-                "@(Get-CimInstance Win32_Process | Select-Object Name,ProcessId,ExecutablePath) | " +
-                "ConvertTo-Json -Compress -Depth 3");
-
-            int total = rows.Count;
             string sysRoot = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
             string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             string pfx = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+            bool Standard(string path) =>
+                path.StartsWith(sysRoot, StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith(pf, StringComparison.OrdinalIgnoreCase) ||
+                (pfx.Length > 0 && path.StartsWith(pfx, StringComparison.OrdinalIgnoreCase));
 
-            int flagged = 0;
-            foreach (var r in rows)
+            var flagged = procs
+                .Where(p => p.ExePath.Length > 0 && !Standard(p.ExePath))
+                .OrderByDescending(p => p.ModifiedSort)
+                .ToList();
+
+            int shown = 0;
+            foreach (var p in flagged)
             {
-                string path = Str(r, "ExecutablePath");
-                if (path.Length == 0) continue; // system/protected - skip noise
-
-                bool standard =
-                    path.StartsWith(sysRoot, StringComparison.OrdinalIgnoreCase) ||
-                    path.StartsWith(pf, StringComparison.OrdinalIgnoreCase) ||
-                    (pfx.Length > 0 && path.StartsWith(pfx, StringComparison.OrdinalIgnoreCase));
-                if (standard) continue;
-
-                bool risky = LooksRisky(path);
-                if (++flagged <= MaxList)
-                    group.Add(risky ? CheckStatus.Warn : CheckStatus.Info,
-                        Str(r, "Name"),
-                        $"pid {Str(r, "ProcessId")}  -  {path}" +
-                        (risky ? "   (temp/download/user location)" : ""));
+                if (++shown > MaxList) break;
+                bool risky = LooksRisky(p.ExePath);
+                group.Add(risky ? CheckStatus.Warn : CheckStatus.Info, p.Name,
+                    $"pid {p.Pid}  -  modified {p.ModifiedText}  -  {p.ExePath}" +
+                    (risky ? "   (temp/download/user location)" : ""));
             }
 
-            if (flagged == 0)
+            if (flagged.Count == 0)
                 group.Add(CheckStatus.Pass, "Processes",
                     $"{total} running; none outside Windows/Program Files.");
             else
             {
-                if (flagged > MaxList) group.Add(CheckStatus.Info, "...", $"{flagged - MaxList} more not shown.");
+                if (flagged.Count > MaxList) group.Add(CheckStatus.Info, "...", $"{flagged.Count - MaxList} more not shown.");
                 group.Add(CheckStatus.Info, "Process inventory",
-                    $"{total} running total, {flagged} outside standard program locations (review).");
+                    $"{total} running total, {flagged.Count} outside standard program locations (review).");
             }
             return group;
+        }
+
+        /// <summary>Structured process list (used by the Processes grid), with exe version + modify date.</summary>
+        public static List<ProcessItem> GetProcesses()
+        {
+            var rows = RunPowerShellArray(
+                "@(Get-CimInstance Win32_Process | Select-Object Name,ProcessId,ExecutablePath) | " +
+                "ConvertTo-Json -Compress -Depth 3");
+
+            var list = new List<ProcessItem>();
+            var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in rows)
+            {
+                var p = new ProcessItem { Name = Str(r, "Name"), ExePath = Str(r, "ExecutablePath") };
+                int.TryParse(Str(r, "ProcessId"), out int pid);
+                p.Pid = pid;
+
+                // Collapse duplicate executables (e.g. many svchost/chrome) by path; keep path-less rows.
+                if (p.ExePath.Length > 0 && !seenPaths.Add(p.ExePath)) continue;
+
+                if (p.ExePath.Length > 0 && File.Exists(p.ExePath))
+                {
+                    try
+                    {
+                        var fi = System.Diagnostics.FileVersionInfo.GetVersionInfo(p.ExePath);
+                        p.Version = fi.FileVersion ?? "";
+                        p.Company = fi.CompanyName ?? "";
+                    }
+                    catch { /* ignore */ }
+                    try { p.Modified = File.GetLastWriteTime(p.ExePath); } catch { /* ignore */ }
+                }
+                p.ModifiedText = p.Modified?.ToString("yyyy-MM-dd") ?? "—";
+                p.ModifiedSort = p.Modified ?? DateTime.MinValue;
+                p.DaysOld = p.Modified != null ? Math.Max(0, (int)(DateTime.Now - p.Modified.Value).TotalDays) : null;
+                list.Add(p);
+            }
+            return list;
         }
 
         // ----------------------------------------------------------------- //
@@ -383,31 +468,149 @@ namespace BrowseSafe
         public static CheckGroup CheckStartup()
         {
             var group = new CheckGroup("Startup Programs (auto-run)");
-
-            var rows = RunPowerShellArray(
-                "@(Get-CimInstance Win32_StartupCommand | Select-Object Name,Command,Location) | " +
-                "ConvertTo-Json -Compress -Depth 3");
-
-            if (rows.Count == 0)
+            var items = GetStartup();
+            if (items.Count == 0)
             {
                 group.Add(CheckStatus.Pass, "Startup", "No auto-start entries found.");
                 return group;
             }
 
             int shown = 0;
-            foreach (var r in rows)
+            foreach (var it in items.OrderByDescending(i => i.StatusSort))
             {
                 if (++shown > MaxList) break;
-                string cmd = Str(r, "Command");
-                bool risky = LooksRisky(cmd);
-                group.Add(risky ? CheckStatus.Warn : CheckStatus.Info,
-                    Str(r, "Name"),
-                    $"{ShortLoc(Str(r, "Location"))}  -  {cmd}");
+                bool risky = LooksRisky(it.Command) || LooksRisky(it.ExePath);
+                group.Add(risky ? CheckStatus.Warn : CheckStatus.Info, it.Name,
+                    $"{it.Location}  -  added {it.RegistryAddedText}  -  {(it.ExePath.Length > 0 ? it.ExePath : it.Command)}");
             }
-            if (rows.Count > MaxList)
-                group.Add(CheckStatus.Info, "...", $"{rows.Count - MaxList} more not shown.");
-            group.Add(CheckStatus.Info, "Total startup items", $"{rows.Count} auto-run entries.");
+            if (items.Count > MaxList)
+                group.Add(CheckStatus.Info, "...", $"{items.Count - MaxList} more not shown.");
+            group.Add(CheckStatus.Info, "Total startup items", $"{items.Count} auto-run entries.");
             return group;
+        }
+
+        /// <summary>Structured startup list (used by the Startup grid): registry Run keys + Startup folders.</summary>
+        public static List<StartupItem> GetStartup()
+        {
+            var list = new List<StartupItem>();
+
+            var regSources = new (RegistryKey Hive, string Path, string Label)[]
+            {
+                (Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKLM\\Run"),
+                (Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce", "HKLM\\RunOnce"),
+                (Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run", "HKLM\\Run (WOW64)"),
+                (Registry.CurrentUser, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", "HKCU\\Run"),
+                (Registry.CurrentUser, @"SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce", "HKCU\\RunOnce"),
+            };
+            foreach (var (hive, path, label) in regSources)
+            {
+                try
+                {
+                    using var key = hive.OpenSubKey(path);
+                    if (key == null) continue;
+                    DateTime? keyTime = GetKeyLastWriteTime(key);
+                    foreach (var name in key.GetValueNames())
+                    {
+                        if (string.IsNullOrEmpty(name)) continue;
+                        string cmd = Convert.ToString(key.GetValue(name)) ?? "";
+                        if (cmd.Length == 0) continue;
+                        list.Add(new StartupItem
+                        {
+                            Name = name, Command = cmd, Location = label, Source = "Registry",
+                            ExePath = ExtractExe(cmd), RegistryAdded = keyTime,
+                        });
+                    }
+                }
+                catch { /* skip inaccessible hive */ }
+            }
+
+            var folders = new (string Dir, string Label)[]
+            {
+                (Environment.GetFolderPath(Environment.SpecialFolder.Startup), "Startup (user)"),
+                (Environment.GetFolderPath(Environment.SpecialFolder.CommonStartup), "Startup (common)"),
+            };
+            var lnkItems = new List<StartupItem>();
+            foreach (var (dir, label) in folders)
+            {
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
+                List<string> files;
+                try { files = Directory.EnumerateFiles(dir).ToList(); } catch { continue; }
+                foreach (var f in files)
+                {
+                    if (Path.GetFileName(f).Equals("desktop.ini", StringComparison.OrdinalIgnoreCase)) continue;
+                    var it = new StartupItem
+                    {
+                        Name = Path.GetFileNameWithoutExtension(f), Command = f, Location = label, Source = "Folder",
+                    };
+                    try { it.RegistryAdded = File.GetLastWriteTime(f); } catch { /* ignore */ }
+                    if (Path.GetExtension(f).Equals(".lnk", StringComparison.OrdinalIgnoreCase)) lnkItems.Add(it);
+                    else it.ExePath = f;
+                    list.Add(it);
+                }
+            }
+            if (lnkItems.Count > 0)
+            {
+                var targets = ResolveShortcuts(lnkItems.Select(i => i.Command).ToList());
+                foreach (var it in lnkItems)
+                    if (targets.TryGetValue(it.Command, out var tgt) && tgt.Length > 0) it.ExePath = tgt;
+            }
+
+            foreach (var it in list)
+            {
+                if (it.ExePath.Length > 0)
+                {
+                    try { it.Dir = Path.GetDirectoryName(it.ExePath) ?? ""; } catch { /* ignore */ }
+                    try { if (File.Exists(it.ExePath)) it.ExeModified = File.GetLastWriteTime(it.ExePath); } catch { /* ignore */ }
+                }
+                it.RegistryAddedText = it.RegistryAdded?.ToString("yyyy-MM-dd") ?? "—";
+                it.ExeModifiedText = it.ExeModified?.ToString("yyyy-MM-dd") ?? "—";
+
+                DateTime? status = it.RegistryAdded;
+                if (it.ExeModified != null && (status == null || it.ExeModified > status)) status = it.ExeModified;
+                it.StatusSort = status ?? DateTime.MinValue;
+                it.DaysOld = status != null ? Math.Max(0, (int)(DateTime.Now - status.Value).TotalDays) : null;
+            }
+            return list;
+        }
+
+        /// <summary>Resolves .lnk targets in one PowerShell call (WScript.Shell). Returns lnkPath -> targetPath.</summary>
+        private static Dictionary<string, string> ResolveShortcuts(List<string> lnks)
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            if (lnks.Count == 0) return map;
+            string arr = string.Join(",", lnks.Select(p => "'" + p.Replace("'", "''") + "'"));
+            string script =
+                "$sh=New-Object -ComObject WScript.Shell; $r=[ordered]@{}; " +
+                $"foreach($p in @({arr})){{ try{{ $r[$p]=$sh.CreateShortcut($p).TargetPath }}catch{{}} }}; " +
+                "$r | ConvertTo-Json -Compress";
+            var root = RunPowerShellJson(script);
+            if (root != null && root.Value.ValueKind == JsonValueKind.Object)
+                foreach (var p in root.Value.EnumerateObject())
+                    if (p.Value.ValueKind == JsonValueKind.String) map[p.Name] = p.Value.GetString() ?? "";
+            return map;
+        }
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern int RegQueryInfoKey(
+            Microsoft.Win32.SafeHandles.SafeRegistryHandle hKey, IntPtr lpClass, IntPtr lpcchClass, IntPtr lpReserved,
+            IntPtr lpcSubKeys, IntPtr lpcbMaxSubKeyLen, IntPtr lpcbMaxClassLen,
+            IntPtr lpcValues, IntPtr lpcbMaxValueNameLen, IntPtr lpcbMaxValueLen,
+            IntPtr lpcbSecurityDescriptor, out FILETIME lpftLastWriteTime);
+
+        /// <summary>Registry key's last-write time (the closest available "added/changed" date for Run values).</summary>
+        private static DateTime? GetKeyLastWriteTime(RegistryKey key)
+        {
+            try
+            {
+                if (RegQueryInfoKey(key.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
+                        IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, out FILETIME ft) == 0)
+                {
+                    long l = ((long)ft.dwHighDateTime << 32) | (uint)ft.dwLowDateTime;
+                    return DateTime.FromFileTime(l);
+                }
+            }
+            catch { /* ignore */ }
+            return null;
         }
 
         // ----------------------------------------------------------------- //
@@ -626,6 +829,7 @@ namespace BrowseSafe
                 if (d.InfName.Length > 0)
                 {
                     string infPath = Path.Combine(infDir, d.InfName);
+                    d.InfPath = infPath;
                     try
                     {
                         if (File.Exists(infPath))
@@ -650,6 +854,9 @@ namespace BrowseSafe
         // ----------------------------------------------------------------- //
         // Helpers
         // ----------------------------------------------------------------- //
+        /// <summary>Path to chrome.exe in standard install locations, or null.</summary>
+        public static string? ChromeExePath() => FindChrome();
+
         private static string? FindChrome()
         {
             string[] candidates =

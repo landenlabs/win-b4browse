@@ -9,10 +9,9 @@
     <RootNamespace>BrowseSafe</RootNamespace>
     <AssemblyName>BrowseSafe</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>6.05.25</Version>
-    <AssemblyVersion>$(Version)</AssemblyVersion>
-    <FileVersion>$(Version)</FileVersion>
-    <AssemblyInformationalVersion>$(Version)</AssemblyInformationalVersion>
+    <Version>6.05.26</Version>
+    <!-- targeted runtime identifiers for publishing self-contained or RID-specific assets -->
+    <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
     <Company>LanDen Labs</Company>
     <Product>Browse Safe</Product>
     <Description>Verifies the network and OS are in a safe state before running the Chrome browser.</Description>

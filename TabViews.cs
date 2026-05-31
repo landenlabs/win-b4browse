@@ -1,3 +1,5 @@
+// Copyright (c) 2026 LanDen Labs - Dennis Lang
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -61,24 +63,21 @@ namespace BrowseSafe
             string htmlPath = Path.Combine(AppContext.BaseDirectory, "links.html");
             string html = null;
             try { if (File.Exists(htmlPath)) html = File.ReadAllText(htmlPath); } catch { }
-
             if (string.IsNullOrEmpty(html))
             {
-                // Fallback HTML if the file is not present in the output directory.
                 html =
 "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Helpful Links</title>"
-+"<style>body{font-family:Segoe UI, Tahoma, sans-serif;margin:12px;color:#222}h1{font-size:18px}li{margin:8px 0}a{color:#0066cc}</style></head><body>"
-+"<h1>Helpful links</h1><ul>"
-+"<li><a href=\"https://www.google.com/chrome/safety-check\" target=\"_blank\">Chrome Safety Check</a></li>"
-+"<li><a href=\"windowsdefender://\">Windows Security</a></li>"
-+"<li><a href=\"https://www.virustotal.com/\" target=\"_blank\">VirusTotal</a></li>"
-+"<li><a href=\"https://developer.chrome.com/docs/extensions/\" target=\"_blank\">Chrome extensions guide</a></li>"
-+"</ul></body></html>";
+                    + "<style>body{font-family:Segoe UI, Tahoma, sans-serif;margin:12px;color:#222}h1{font-size:18px}li{margin:8px 0}a{color:#0066cc}</style></head><body>"
+                    + "<h1>Helpful links</h1><ul>"
+                    + "<li><a href=\"https://www.google.com/chrome/safety-check\" target=\"_blank\">Chrome Safety Check</a></li>"
+                    + "<li><a href=\"windowsdefender://\">Windows Security</a></li>"
+                    + "<li><a href=\"https://www.virustotal.com/\" target=\"_blank\">VirusTotal</a></li>"
+                    + "<li><a href=\"https://developer.chrome.com/docs/extensions/\" target=\"_blank\">Chrome extensions guide</a></li>"
+                    + "</ul></body></html>";
             }
 
             browser.DocumentText = html;
 
-            // Apply the app theme into the loaded document by injecting a style tag.
             void ApplyThemeToBrowser()
             {
                 try
@@ -109,7 +108,6 @@ namespace BrowseSafe
 
             browser.DocumentCompleted += (_, _) => ApplyThemeToBrowser();
 
-            // Open external links in the user's default browser / handler.
             browser.Navigating += (s, e) =>
             {
                 try
@@ -123,7 +121,6 @@ namespace BrowseSafe
                 catch { }
             };
 
-            // Update when the app theme changes.
             Theme.Changed += () => { if (browser.IsHandleCreated) browser.BeginInvoke(new Action(ApplyThemeToBrowser)); };
 
             return browser;

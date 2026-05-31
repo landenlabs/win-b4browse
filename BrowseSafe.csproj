@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -9,7 +9,10 @@
     <RootNamespace>BrowseSafe</RootNamespace>
     <AssemblyName>BrowseSafe</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.0.0</Version>
+    <Version>6.05.25</Version>
+    <AssemblyVersion>$(Version)</AssemblyVersion>
+    <FileVersion>$(Version)</FileVersion>
+    <AssemblyInformationalVersion>$(Version)</AssemblyInformationalVersion>
     <Company>LanDen Labs</Company>
     <Product>Browse Safe</Product>
     <Description>Verifies the network and OS are in a safe state before running the Chrome browser.</Description>
@@ -18,9 +21,23 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="links.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="dark-light.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="links.html">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include=".github\workflows\publish.yml" />
   </ItemGroup>
 
 </Project>

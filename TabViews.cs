@@ -47,6 +47,88 @@ namespace BrowseSafe
             return grid;
         }
 
+        // ---- Links: render the links.html file in a browser control ----- //
+        public static Control BuildLinks()
+        {
+            var browser = new WebBrowser
+            {
+                Dock = DockStyle.Fill,
+                AllowWebBrowserDrop = false,
+                IsWebBrowserContextMenuEnabled = false,
+                ScriptErrorsSuppressed = true,
+            };
+
+            string htmlPath = Path.Combine(AppContext.BaseDirectory, "links.html");
+            string html = null;
+            try { if (File.Exists(htmlPath)) html = File.ReadAllText(htmlPath); } catch { }
+
+            if (string.IsNullOrEmpty(html))
+            {
+                // Fallback HTML if the file is not present in the output directory.
+                html =
+"<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Helpful Links</title>"
++"<style>body{font-family:Segoe UI, Tahoma, sans-serif;margin:12px;color:#222}h1{font-size:18px}li{margin:8px 0}a{color:#0066cc}</style></head><body>"
++"<h1>Helpful links</h1><ul>"
++"<li><a href=\"https://www.google.com/chrome/safety-check\" target=\"_blank\">Chrome Safety Check</a></li>"
++"<li><a href=\"windowsdefender://\">Windows Security</a></li>"
++"<li><a href=\"https://www.virustotal.com/\" target=\"_blank\">VirusTotal</a></li>"
++"<li><a href=\"https://developer.chrome.com/docs/extensions/\" target=\"_blank\">Chrome extensions guide</a></li>"
++"</ul></body></html>";
+            }
+
+            browser.DocumentText = html;
+
+            // Apply the app theme into the loaded document by injecting a style tag.
+            void ApplyThemeToBrowser()
+            {
+                try
+                {
+                    var doc = browser.Document;
+                    if (doc == null) return;
+                    var headElems = doc.GetElementsByTagName("head");
+                    HtmlElement head = headElems.Count > 0 ? headElems[0] : null;
+                    string css = Theme.IsDark
+                        ? "body{background:#1e1e1e;color:#ddd} a{color:#66aaff} .lead{color:#aaa} .note{color:#aaa} ul{color:#ddd}"
+                        : "body{background:#fff;color:#222} a{color:#0066cc} .lead{color:#666} .note{color:#666} ul{color:#222}";
+
+                    var existing = doc.GetElementById("app-theme-style");
+                    if (existing != null)
+                    {
+                        try { existing.InnerHtml = css; } catch { existing.InnerText = css; }
+                        return;
+                    }
+
+                    var style = doc.CreateElement("style");
+                    style.SetAttribute("id", "app-theme-style");
+                    style.SetAttribute("type", "text/css");
+                    try { style.InnerHtml = css; } catch { style.InnerText = css; }
+                    if (head != null) head.AppendChild(style);
+                }
+                catch { }
+            }
+
+            browser.DocumentCompleted += (_, _) => ApplyThemeToBrowser();
+
+            // Open external links in the user's default browser / handler.
+            browser.Navigating += (s, e) =>
+            {
+                try
+                {
+                    if (e.Url != null && (e.Url.Scheme.StartsWith("http") || e.Url.Scheme == "mailto" || e.Url.Scheme == "windowsdefender"))
+                    {
+                        e.Cancel = true;
+                        Process.Start(new ProcessStartInfo(e.Url.AbsoluteUri) { UseShellExecute = true });
+                    }
+                }
+                catch { }
+            };
+
+            // Update when the app theme changes.
+            Theme.Changed += () => { if (browser.IsHandleCreated) browser.BeginInvoke(new Action(ApplyThemeToBrowser)); };
+
+            return browser;
+        }
+
         // ---- Processes (same structure/behavior as Installed) ------------ //
         public static Control BuildProcesses()
         {

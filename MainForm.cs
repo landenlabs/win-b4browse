@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Reflection;
 using System.IO;
 using System.Windows.Forms;
 
@@ -180,8 +181,28 @@ namespace BrowseSafe
             tip.SetToolTip(themeIcon, "Toggle dark / light theme");
             tip.SetToolTip(themeLabel, "Toggle dark / light theme");
 
+            var aboutButton = new Button
+            {
+                Width = 32,
+                Height = 32,
+                Left = 162, // leave more right margin so the button is fully visible
+                Top = 10,
+                Text = "?",
+                FlatStyle = FlatStyle.System,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+                Padding = new Padding(0, 0, 6, 0),
+            };
+            aboutButton.Click += (_, _) => {
+                try { using var f = new AboutForm(); f.ShowDialog(this); }
+                catch { ShowAboutDialog(); }
+            };
+            tip.SetToolTip(aboutButton, "About Browse Safe");
+
             _leftBottom.Controls.Add(themeIcon);
             _leftBottom.Controls.Add(themeLabel);
+            _leftBottom.Controls.Add(aboutButton);
 
             _leftPanel.Controls.Add(flow);
             _leftPanel.Controls.Add(_leftBottom);
@@ -209,6 +230,7 @@ namespace BrowseSafe
             AddViewTab("Startup", "startup", TabViews.BuildStartup());
             AddViewTab("Installed", "installed", TabViews.BuildInstalled());
             AddViewTab("Devices", "devices", TabViews.BuildDevices());
+            AddViewTab("Links", "links", TabViews.BuildLinks());
 
             // Add Fill first, then Left, then Top items (outermost added last).
             Controls.Add(_tabs);
@@ -369,6 +391,20 @@ namespace BrowseSafe
         {
             Theme.Toggle();
             Invalidate(true);  // best-effort live repaint of standard controls
+        }
+
+        private void ShowAboutDialog()
+        {
+            string ver = "?";
+            try
+            {
+                var asm = System.Reflection.Assembly.GetEntryAssembly();
+                ver = asm?.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                      ?? asm?.GetName().Version?.ToString() ?? "?";
+            }
+            catch { }
+            string msg = $"Browse Safe - Chrome Safety Check\n\nA small tool to inspect Chrome, extensions, and local system indicators relevant to browsing safety.\n\nVersion: {ver}\n\nhttps://github.com/landenlabs/win-browse-safe";
+            MessageBox.Show(this, msg, "About Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         /// <summary>

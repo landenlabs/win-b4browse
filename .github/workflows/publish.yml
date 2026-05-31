@@ -1,0 +1,48 @@
+name: Build and Publish BrowseSafe
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-publish:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore "BrowseSafe.csproj"
+
+      - name: Build
+        run: dotnet build "BrowseSafe.csproj" -c Release --no-restore
+
+      - name: Publish
+        run: |
+          dotnet publish "BrowseSafe.csproj" -c Release -r win-x64 --no-build -o ./publish /p:PublishSingleFile=false
+
+      - name: Zip published output
+        run: |
+          powershell -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; if(Test-Path -Path publish.zip){Remove-Item publish.zip}; [System.IO.Compression.ZipFile]::CreateFromDirectory('publish','publish.zip')"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrowseSafe-publish
+          path: |
+            publish/
+            publish.zip

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace BrowseSafe
@@ -20,12 +21,13 @@ namespace BrowseSafe
         private readonly Button _toggleButton;
         private readonly Button _chromeButton;
         private readonly Button _emailButton;
+        private readonly Button _copyButton;
+        private readonly ToolTip _tips = new();
         private readonly Panel _leftPanel;
         private readonly TabControl _tabs;
         private readonly ResultsView _scanView;
         private readonly BusyOverlay _emailBusy = new();
         private Panel _toolbar = null!;
-        private Label _toolHint = null!;
         private Label _leftHeader = null!;
         private Panel _leftBottom = null!;
 
@@ -88,42 +90,47 @@ namespace BrowseSafe
             };
             _toggleButton.Click += (_, _) => ToggleLeftPanel();
 
+            // Launch Chrome now lives in the left tool panel (added after the Security
+            // shortcuts below); styled to match those buttons.
             _chromeButton = new Button
             {
                 Text = "Launch Chrome",
-                Width = 140,
-                Height = 28,
-                Left = 126,
-                Top = 7,
+                Width = 200,
+                Height = 40,
+                TextAlign = ContentAlignment.MiddleLeft,
                 FlatStyle = FlatStyle.System,
+                Margin = new Padding(0, 12, 0, 8),
                 Enabled = false,
             };
             _chromeButton.Click += (_, _) => LaunchChrome();
 
+            // Email + Copy icon buttons, anchored to the right edge of the toolbar.
             _emailButton = new Button
             {
-                Text = "Email this tab (Chrome)",
-                Width = 170,
-                Height = 28,
-                Left = 274,
-                Top = 7,
+                Text = "",                                  // Segoe MDL2 "Mail" glyph
+                Width = 36, Height = 28, Top = 7,
                 FlatStyle = FlatStyle.System,
+                Font = new Font("Segoe MDL2 Assets", 12f),
             };
             _emailButton.Click += (_, _) => EmailCurrentTab();
 
-            _toolHint = new Label
+            _copyButton = new Button
             {
-                AutoSize = true,
-                Left = 456,
-                Top = 13,
-                ForeColor = Theme.Subtle,
-                Text = "Left panel opens Windows Security pages.",
+                Text = "",                                  // Segoe MDL2 "Copy" glyph
+                Width = 36, Height = 28, Top = 7,
+                FlatStyle = FlatStyle.System,
+                Font = new Font("Segoe MDL2 Assets", 12f),
             };
-            var toolHint = _toolHint;
+            _copyButton.Click += (_, _) => CopyCurrentTab();
+
+            _tips.SetToolTip(_emailButton, "Email this tab's report (opens Gmail in Chrome; full report copied to the clipboard)");
+            _tips.SetToolTip(_copyButton, "Copy this tab's report to the clipboard");
+
             toolbar.Controls.Add(_toggleButton);
-            toolbar.Controls.Add(_chromeButton);
             toolbar.Controls.Add(_emailButton);
-            toolbar.Controls.Add(toolHint);
+            toolbar.Controls.Add(_copyButton);
+            toolbar.SizeChanged += (_, _) => LayoutToolbarRight();
+            LayoutToolbarRight();
 
             // -- Left panel: Windows Security shortcuts --
             _leftPanel = new Panel { Dock = DockStyle.Left, Width = 230, BackColor = Theme.Panel };
@@ -160,17 +167,8 @@ namespace BrowseSafe
                 b.Click += (s, _) => OpenUri((string)((Button)s!).Tag!);
                 flow.Controls.Add(b);
             }
-            var leftNote = new Label
-            {
-                AutoSize = false,
-                Width = 200,
-                Height = 60,
-                ForeColor = Theme.Subtle,
-                Font = new Font("Segoe UI", 8f),
-                Text = "Opens the Windows Security app to the chosen page.",
-                Margin = new Padding(0, 8, 0, 0),
-            };
-            flow.Controls.Add(leftNote);
+            // Launch Chrome sits below the Windows Security shortcuts.
+            flow.Controls.Add(_chromeButton);
 
             // Theme toggle pinned to the lower-left of the panel.
             _leftBottom = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = Theme.Panel };
@@ -274,7 +272,6 @@ namespace BrowseSafe
         {
             BackColor = Theme.Window;
             _toolbar.BackColor = Theme.Toolbar;
-            _toolHint.ForeColor = Theme.Subtle;
 
             _leftPanel.BackColor = Theme.Panel;
             _leftBottom.BackColor = Theme.Panel;
@@ -446,10 +443,43 @@ namespace BrowseSafe
             }
         }
 
+        /// <summary>Builds the active tab's report on a background thread and copies it to the clipboard.</summary>
+        private async void CopyCurrentTab()
+        {
+            string scope = _tabs.SelectedTab?.Tag as string ?? "scan";
+
+            _copyButton.Enabled = false;
+            CenterEmailBusy();
+            _emailBusy.Start();
+            try
+            {
+                var report = await Task.Run(() => Reports.Build(scope));
+                try { Clipboard.SetText(report.Text); } catch { /* clipboard may be busy */ }
+                _tips.Show("Report copied to the clipboard", _copyButton, 0, -28, 1500);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Could not build report: " + ex.Message, "Copy report",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                _emailBusy.Stop();
+                _copyButton.Enabled = true;
+            }
+        }
+
         private void CenterEmailBusy()
         {
             _emailBusy.Left = Math.Max(0, (ClientSize.Width - _emailBusy.Width) / 2);
             _emailBusy.Top = Math.Max(0, (ClientSize.Height - _emailBusy.Height) / 2);
+        }
+
+        /// <summary>Pins the email + copy icon buttons to the right edge of the toolbar.</summary>
+        private void LayoutToolbarRight()
+        {
+            _emailButton.Left = Math.Max(0, _toolbar.ClientSize.Width - _emailButton.Width - 8);
+            _copyButton.Left = Math.Max(0, _emailButton.Left - _copyButton.Width - 6);
         }
 
         private void OpenUri(string uri)

@@ -34,7 +34,7 @@ namespace BrowseSafe
             ("devices",   "Devices", new Func<CheckGroup>[] { SafetyChecks.CheckDevices }),
             ("winext",    "Shell Extensions", new Func<CheckGroup>[] { SafetyChecks.CheckWinExt }),
             ("events",    "Event Log", new Func<CheckGroup>[] { SafetyChecks.CheckEventLog }),
-            ("firewall",  "Firewall", new Func<CheckGroup>[] { SafetyChecks.CheckFirewall }),
+            ("firewall",  "Firewall", new Func<CheckGroup>[] { SafetyChecks.CheckFirewall, SafetyChecks.CheckFirewallRules }),
             ("restores",  "Restore Points", new Func<CheckGroup>[] { SafetyChecks.CheckRestore }),
         };
 

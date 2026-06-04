@@ -34,6 +34,7 @@ namespace BrowseSafe
             CheckProxy(),
             CheckTimeSync(),
             CheckWindowsSecurity(),
+            CheckPromiscuousMode(),
         };
 
         // One shared client for the small best-effort HTTP calls (org/vendor/UPnP xml).
@@ -44,6 +45,154 @@ namespace BrowseSafe
             var c = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
             c.DefaultRequestHeaders.UserAgent.ParseAdd("BrowseSafe/1.0");
             return c;
+        }
+
+        // ----------------------------------------------------------------- //
+        // 11. Network sniffers / promiscuous-mode adapters
+        // ----------------------------------------------------------------- //
+        /// <summary>
+        /// Detects local packet capture ("sniffing"). A sniffer such as
+        /// Wireshark/pcap puts the NIC into <b>promiscuous mode</b> so it receives
+        /// every frame on the segment, not just frames addressed to this PC.
+        /// Three independent signals are reported:
+        ///   1. Any adapter whose NDIS packet filter has the PROMISCUOUS bit set
+        ///      (MSNdis_CurrentPacketFilter, bit 0x20) - the defining trait of a
+        ///      live capture, flagged FAIL.
+        ///   2. Installed capture drivers/services (Npcap, WinPcap, the built-in
+        ///      pktmon) - the plumbing a sniffer needs; a RUNNING one is a WARN.
+        ///   3. Running capture tools (Wireshark, dumpcap, tshark, tcpdump, ...).
+        /// </summary>
+        public static CheckGroup CheckPromiscuousMode()
+        {
+            var group = new CheckGroup("11. Network Sniffers / Promiscuous Mode");
+
+            var root = QueryPromiscuousState();
+            if (root == null)
+            {
+                group.Add(CheckStatus.Warn, "Sniffer detection",
+                    "Could not query NDIS packet filters / capture drivers via PowerShell.");
+                return group;
+            }
+            var r = root.Value;
+
+            // --- 1. Adapters in promiscuous mode (the definitive signal) ---
+            int promiscCount = 0, adapterCount = 0;
+            foreach (var a in AsArray(r, "Adapters"))
+            {
+                if (a.ValueKind != JsonValueKind.Object) continue;
+                adapterCount++;
+                if (!(a.TryGetProperty("Promiscuous", out var p) && p.ValueKind == JsonValueKind.True))
+                    continue;
+
+                promiscCount++;
+                string name = a.TryGetProperty("Name", out var n) ? (n.GetString() ?? "?") : "?";
+                long filter = a.TryGetProperty("Filter", out var f) && f.TryGetInt64(out var fv) ? fv : 0;
+                group.Add(CheckStatus.Fail, $"Promiscuous adapter: {name}",
+                    $"NDIS packet filter 0x{filter:X} has the PROMISCUOUS bit (0x20) set - this NIC is " +
+                    "capturing all traffic on the segment, not just its own. Likely a running sniffer.");
+            }
+            if (promiscCount == 0)
+                group.Add(adapterCount > 0 ? CheckStatus.Pass : CheckStatus.Info, "Promiscuous mode",
+                    adapterCount > 0
+                        ? $"No adapter is in promiscuous mode ({adapterCount} adapter(s) checked)."
+                        : "No NDIS packet-filter data returned (MSNdis_CurrentPacketFilter unavailable).");
+
+            // --- 2. Installed packet-capture drivers / services ---
+            int driverCount = 0;
+            foreach (var d in AsArray(r, "CaptureDrivers"))
+            {
+                if (d.ValueKind != JsonValueKind.Object) continue;
+                driverCount++;
+                string name = d.TryGetProperty("Name", out var n) ? (n.GetString() ?? "?") : "?";
+                string disp = d.TryGetProperty("Display", out var ds) ? (ds.GetString() ?? "") : "";
+                string state = d.TryGetProperty("State", out var st) ? (st.GetString() ?? "") : "";
+                bool running = state.Equals("Running", StringComparison.OrdinalIgnoreCase);
+                string label = disp.Length > 0 ? $"{disp}  ({name})" : name;
+                group.Add(running ? CheckStatus.Warn : CheckStatus.Info,
+                    $"Capture driver: {label}",
+                    running ? $"Installed and RUNNING (State={state}) - sniffing is possible right now."
+                            : $"Installed (State={state})." );
+            }
+            if (driverCount == 0)
+                group.Add(CheckStatus.Pass, "Packet-capture drivers",
+                    "No Npcap / WinPcap / pktmon capture driver detected.");
+
+            // --- 3. Running capture tools ---
+            foreach (var pr in AsArray(r, "SnifferProcesses"))
+            {
+                string pname = pr.ValueKind == JsonValueKind.String ? (pr.GetString() ?? "") : "";
+                if (pname.Length == 0) continue;
+                group.Add(CheckStatus.Warn, $"Capture tool running: {pname}",
+                    "A known packet-capture / sniffing tool is currently running.");
+            }
+
+            return group;
+        }
+
+        /// <summary>
+        /// One-shot PowerShell probe returning { Adapters[], CaptureDrivers[], SnifferProcesses[] }.
+        /// All three blocks are best-effort and individually wrapped so a single
+        /// unavailable namespace/cmdlet never blanks the others.
+        /// </summary>
+        private static JsonElement? QueryPromiscuousState()
+        {
+            const string script = @"
+$ErrorActionPreference='SilentlyContinue'
+$r=[ordered]@{}
+
+# NDIS current packet filter per adapter; PROMISCUOUS = bit 0x20.
+$ad=@()
+try {
+  foreach($f in (Get-CimInstance -Namespace root/WMI -ClassName MSNdis_CurrentPacketFilter)){
+    $flt=[int64]$f.NdisCurrentPacketFilter
+    $ad += [ordered]@{
+      Name=[string]$f.InstanceName
+      Filter=$flt
+      Promiscuous=[bool](($flt -band 0x20) -ne 0)
+    }
+  }
+} catch {}
+$r.Adapters=@($ad)
+
+# Installed capture drivers/services: Npcap, WinPcap (npf), Microsoft pktmon.
+$dv=@()
+try {
+  foreach($d in (Get-CimInstance Win32_SystemDriver | Where-Object { $_.Name -match '(?i)npcap|^npf$|winpcap|pktmon' })){
+    $dv += [ordered]@{ Name=[string]$d.Name; Display=[string]$d.DisplayName; State=[string]$d.State }
+  }
+} catch {}
+$r.CaptureDrivers=@($dv)
+
+# Running capture tools.
+$pr=@()
+try {
+  foreach($p in (Get-Process | Where-Object { $_.Name -match '(?i)wireshark|dumpcap|tshark|tcpdump|windump|netmon|ettercap|rawcap' })){
+    $pr += [string]$p.Name
+  }
+} catch {}
+$r.SnifferProcesses=@($pr | Select-Object -Unique)
+
+$r | ConvertTo-Json -Compress -Depth 5
+";
+            return RunPowerShellJson(script);
+        }
+
+        /// <summary>
+        /// Enumerates a JSON property that PowerShell's ConvertTo-Json may emit as an
+        /// array, or (for a single item) as a bare object/string. Yields nothing when
+        /// the property is absent or null.
+        /// </summary>
+        private static IEnumerable<JsonElement> AsArray(JsonElement parent, string prop)
+        {
+            if (!parent.TryGetProperty(prop, out var el)) yield break;
+            if (el.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in el.EnumerateArray()) yield return e;
+            }
+            else if (el.ValueKind is JsonValueKind.Object or JsonValueKind.String)
+            {
+                yield return el;
+            }
         }
 
         // ----------------------------------------------------------------- //

@@ -7,8 +7,6 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Management;
-using Microsoft.Win32;
-using Microsoft.Win32.SafeHandles;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -68,143 +66,106 @@ namespace BrowseSafe
             return grid;
         }
 
-        // ---- Firewall info tab ----------------------------------------- //
+        // ---- Firewall: profile posture + scrollable, audited rule list -- //
         public static Control BuildFirewall()
         {
-            var panel = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
-            var flow = new FlowLayoutPanel { Dock = DockStyle.Top, FlowDirection = FlowDirection.TopDown, AutoSize = true, Padding = new Padding(12) };
-
-            var lblEnabled = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font("Segoe UI", 10f) };
-            var lblRules = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font("Segoe UI", 10f) };
-            var lblLast = new Label { AutoSize = true, ForeColor = Theme.Text, Font = new Font("Segoe UI", 10f) };
-
-            var btnManage = new Button { Text = "Manage Firewall", AutoSize = true, FlatStyle = FlatStyle.System };
-
-            flow.Controls.Add(lblEnabled);
-            flow.Controls.Add(lblRules);
-            flow.Controls.Add(lblLast);
-            flow.Controls.Add(new Label { Height = 8 });
-            flow.Controls.Add(btnManage);
-
-            panel.Controls.Add(flow);
-
-            var help = HelpUi.CreateButton(TabHelp.Firewall);
-            help.Top = 8;
-            help.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            panel.Controls.Add(help);
-            help.BringToFront();
-            void LayoutHelp() => help.Left = Math.Max(0, panel.ClientSize.Width - help.Width - 8);
-            panel.SizeChanged += (_, _) => LayoutHelp();
-            LayoutHelp();
-
-            void Update()
+            SortableGrid grid = null!;
+            var cols = new[]
             {
-                try
-                {
-                    bool enabled = IsFirewallEnabled();
-                    lblEnabled.Text = "Firewall enabled: " + (enabled ? "Yes" : "No");
-
-                    int rules = GetFirewallRuleCount();
-                    lblRules.Text = "Firewall rules: " + rules;
-
-                    var last = GetFirewallRegistryLastModified();
-                    lblLast.Text = "Last rule change: " + (last.HasValue ? last.Value.ToString("yyyy-MM-dd HH:mm") : "Unknown");
-                }
-                catch (Exception ex)
-                {
-                    lblEnabled.Text = "Firewall status: error";
-                    lblRules.Text = ex.Message;
-                }
-            }
-
-            // Open Windows Defender Firewall with Advanced Security (the rule manager).
-            btnManage.Click += (_, _) => StartShell(btnManage, "wf.msc");
-            Update();
-            Theme.Changed += () => { if (panel.IsHandleCreated) panel.BeginInvoke(new Action(() => { lblEnabled.ForeColor = Theme.Text; lblRules.ForeColor = Theme.Text; lblLast.ForeColor = Theme.Text; })); };
-            return panel;
-        }
-
-        private static bool IsFirewallEnabled()
-        {
-            try
-            {
-                using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\StandardProfile");
-                if (key == null) return false;
-                var val = key.GetValue("EnableFirewall");
-                if (val is int i) return i != 0;
-                if (val is string s && int.TryParse(s, out int r)) return r != 0;
-            }
-            catch { }
-            return false;
-        }
-
-        private static int GetFirewallRuleCount()
-        {
-            try
-            {
-                using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy\FirewallRules");
-                if (key == null) return 0;
-                return key.ValueCount;
-            }
-            catch { return 0; }
-        }
-
-        private static DateTime? GetFirewallRegistryLastModified()
-        {
-            // The previous version shelled out to PowerShell and read
-            // (Get-Item <regkey>).LastWriteTime -- but a RegistryKey has no LastWriteTime
-            // member, so that expression was always $null and the date never resolved.
-            // A registry key's last-write time is only exposed by the Win32 RegQueryInfoKey
-            // API, so query it directly below.
-            //
-            // FirewallRules holds the local rule store; when the firewall is managed by
-            // another product (e.g. CrowdStrike) that key can be empty, so also consider
-            // the policy/profile keys and report the most recent change across all of them.
-            const string baseP = @"SYSTEM\CurrentControlSet\Services\SharedAccess\Parameters\FirewallPolicy";
-            string[] candidates =
-            {
-                baseP + @"\FirewallRules",
-                baseP + @"\RestrictedServices\Configurable\System",
-                baseP + @"\StandardProfile",
-                baseP + @"\PublicProfile",
-                baseP + @"\DomainProfile",
-                baseP,
+                new GridColumn { Header = "Status", Width = 70,
+                    Text = o => FirewallStatusLabel((FirewallRule)o),
+                    Sort = o => (int)((FirewallRule)o).Risk,
+                    Style = o => FirewallStyle((FirewallRule)o) },
+                new GridColumn { Header = "Dir", Width = 46,
+                    Text = o => ((FirewallRule)o).Direction,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Action", Width = 58,
+                    Text = o => ((FirewallRule)o).Action,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Active", Width = 52,
+                    Text = o => ((FirewallRule)o).Active ? "Yes" : "No",
+                    Sort = o => ((FirewallRule)o).Active ? 1 : 0 },
+                new GridColumn { Header = "Proto", Width = 58, Text = o => ((FirewallRule)o).Protocol },
+                new GridColumn { Header = "L.Port", Width = 64, Text = o => ((FirewallRule)o).LocalPort },
+                new GridColumn { Header = "Remote", Width = 104, Text = o => ((FirewallRule)o).RemoteAddress },
+                new GridColumn { Header = "Profile", Width = 86,
+                    Text = o => ((FirewallRule)o).Profile,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Name", Fill = 150, Text = o => ((FirewallRule)o).Name,
+                    FilterKind = ColumnFilterKind.Regex },
+                new GridColumn { Header = "Program", Fill = 200, Text = o => ((FirewallRule)o).AppPath,
+                    FilterKind = ColumnFilterKind.Regex },
             };
 
-            DateTime? latest = null;
-            foreach (var path in candidates)
-            {
-                var t = RegKeyLastWriteTime(path);
-                if (t.HasValue && (latest == null || t.Value > latest.Value)) latest = t;
-            }
-            return latest;
+            grid = new SortableGrid("Refresh",
+                () => SafetyChecks.GetFirewallRules().Cast<object>().ToList(),
+                cols, defaultSortColumn: 0, defaultAscending: false,   // flagged rules float to the top
+                extraButtons: new (string, Action)[] { ("Manage Firewall", () => StartShell(grid, "wf.msc")) },
+                help: TabHelp.Firewall,
+                headerInfo: SafetyChecks.FirewallRulesHeader,
+                headerHeight: 128,
+                severity: items =>
+                {
+                    var rules = items.OfType<FirewallRule>().ToList();
+                    var worst = TabSeverity.None;
+                    int alert = 0, review = 0;
+                    foreach (var r in rules)
+                    {
+                        worst = Sev.Max(worst, r.Risk);
+                        if (r.Risk == TabSeverity.Alert) alert++;
+                        else if (r.Risk == TabSeverity.Caution) review++;
+                    }
+                    string flagged = alert + review == 0
+                        ? "no suspicious rules"
+                        : $"{alert} alert, {review} review";
+                    grid.SetStatus($"{rules.Count} rule(s)  -  {flagged}");
+                    return worst;
+                },
+                onRowContext: o => ShowFirewallMenu(grid, (FirewallRule)o),
+                showAllToggle: ("All",
+                    "Off: hide inactive rules.  On: show every rule, active or not.",
+                    o => !((FirewallRule)o).Active));   // when off, hide rules that are not active
+            return grid;
         }
 
-        [DllImport("advapi32.dll", SetLastError = true)]
-        private static extern int RegQueryInfoKey(
-            SafeRegistryHandle hKey, IntPtr lpClass, IntPtr lpcchClass, IntPtr lpReserved,
-            IntPtr lpcSubKeys, IntPtr lpcbMaxSubKeyLen, IntPtr lpcbMaxClassLen,
-            IntPtr lpcValues, IntPtr lpcbMaxValueNameLen, IntPtr lpcbMaxValueLen,
-            IntPtr lpcbSecurityDescriptor,
-            out System.Runtime.InteropServices.ComTypes.FILETIME lpftLastWriteTime);
-
-        // Returns the last-write time of an HKLM subkey via RegQueryInfoKey, or null if the
-        // key is missing or the query fails.
-        private static DateTime? RegKeyLastWriteTime(string subKeyPath)
+        private static string FirewallStatusLabel(FirewallRule r) => r.Risk switch
         {
-            try
+            TabSeverity.Alert => "Alert",
+            TabSeverity.Caution => "Review",
+            _ => "OK",
+        };
+
+        private static (Color Back, Color Fore)? FirewallStyle(FirewallRule r) => r.Risk switch
+        {
+            TabSeverity.Alert => (RedBack, RedFore),
+            TabSeverity.Caution => (YelBack, YelFore),
+            _ => null,
+        };
+
+        private static void ShowFirewallMenu(SortableGrid grid, FirewallRule r)
+        {
+            bool hasApp = r.AppPath.Length > 0 && r.AppPath.IndexOf('\\') >= 0;
+            string expanded = hasApp ? Environment.ExpandEnvironmentVariables(r.AppPath) : "";
+
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Copy rule name", null, (_, _) => { try { Clipboard.SetText(r.Name); } catch { } });
+            menu.Items.Add("Copy program path", null, (_, _) => { try { Clipboard.SetText(r.AppPath); } catch { } })
+                .Enabled = hasApp;
+            menu.Items.Add("Open file location", null,
+                (_, _) => OpenLocation(grid, expanded, Path.GetDirectoryName(expanded) ?? ""))
+                .Enabled = hasApp && File.Exists(expanded);
+            if (r.Note.Length > 0)
+                menu.Items.Add("Copy audit note", null, (_, _) => { try { Clipboard.SetText(r.Note); } catch { } });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Search web for program", null, (_, _) =>
             {
-                using var key = Registry.LocalMachine.OpenSubKey(subKeyPath);
-                if (key == null) return null;
-                if (RegQueryInfoKey(key.Handle, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
-                        IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero,
-                        IntPtr.Zero, IntPtr.Zero, out var ft) != 0)
-                    return null;
-                long ticks = ((long)(uint)ft.dwHighDateTime << 32) | (uint)ft.dwLowDateTime;
-                if (ticks <= 0) return null;
-                return DateTime.FromFileTimeUtc(ticks).ToLocalTime();
-            }
-            catch { return null; }
+                string term = hasApp ? Path.GetFileName(expanded) : r.Name;
+                string q = HttpUtility.UrlEncode(term + " firewall rule");
+                OpenBrowser($"https://www.google.com/search?q={q}");
+            });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Manage Firewall (wf.msc)", null, (_, _) => StartShell(grid, "wf.msc"));
+            menu.Show(Cursor.Position);
         }
 
         // ---- Patches: recent Windows patches --------------------------- //

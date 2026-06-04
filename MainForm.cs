@@ -315,6 +315,7 @@ namespace BrowseSafe
             ("proxy configuration", SafetyChecks.CheckProxy),
             ("atomic time sync",    SafetyChecks.CheckTimeSync),
             ("Windows security",    SafetyChecks.CheckWindowsSecurity),
+            ("network sniffers",    SafetyChecks.CheckPromiscuousMode),
         };
 
         private static (string, Func<CheckGroup>)[] One(string label, Func<CheckGroup> run)

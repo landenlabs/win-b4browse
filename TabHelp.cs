@@ -28,6 +28,11 @@ namespace BrowseSafe
             "The other tabs drill into individual areas (patches, processes, services, startup, drivers, " +
             "DNS, browser extensions, events, firewall). This tab is the at-a-glance summary.\n" +
             "\n" +
+            "# Network sniffers / promiscuous mode\n" +
+            "The scan flags local packet capture: any adapter whose NDIS packet filter has the PROMISCUOUS " +
+            "bit set (the defining trait of a live capture), installed capture drivers (Npcap / WinPcap / " +
+            "pktmon), and running capture tools (Wireshark, dumpcap, tshark, tcpdump, ...).\n" +
+            "\n" +
             "# Special actions\n" +
             "- Run Safety Checks - runs every check; groups render as each completes.\n" +
             "- In the Hosts File section, click [ Open hosts folder ] to reveal the hosts file in Explorer.\n");
@@ -246,16 +251,42 @@ namespace BrowseSafe
 
         public static readonly HelpInfo Firewall = new("Windows Firewall",
             "# What this shows\n" +
-            "A summary of the Windows Defender Firewall state read from the registry:\n" +
-            "- whether the firewall is enabled,\n" +
-            "- the number of local firewall rules,\n" +
-            "- when the rule/policy store last changed.\n" +
+            "The header panel summarises the Windows Defender Firewall state read from the registry " +
+            "(whether each profile is enabled, the rule count, and when the rule/policy store last changed). " +
+            "Below it, a scrollable, sortable list of every firewall rule parsed from the registry rule " +
+            "stores (local + Group Policy).\n" +
             "\n" +
             "When the firewall is managed by another product (e.g. an EDR agent) the local rule store can be " +
             "empty; the last-changed date considers the policy and profile keys too.\n" +
             "\n" +
+            "# Rule audit (hijack indicators)\n" +
+            "Each Allow rule is checked for the signs an attacker leaves when punching a hole through the " +
+            "firewall for persistence or a command-and-control channel. The Status column flags:\n" +
+            "- Alert  - an inbound Allow rule whose program lives in a transient folder (Temp, Downloads, " +
+            "Public); a rule granting access to a living-off-the-land binary (PowerShell, cmd, wmic, mshta, " +
+            "rundll32, regsvr32, ...); an unscoped \"any protocol / any port / any remote address\" rule; or a " +
+            "rule whose name impersonates a known app (e.g. \"Google Chrome\") but whose binary is outside the " +
+            "trusted install locations (Program Files / Windows).\n" +
+            "- Review - the outbound or lower-confidence form of those signals: a binary under AppData or " +
+            "ProgramData (also common for legitimate per-user installs), or a flagged rule that is inactive.\n" +
+            "- OK     - nothing unusual. Block rules are not audited (they are protective).\n" +
+            "\n" +
+            "Sort by Status (default) to float flagged rules to the top, and correlate a rule's appearance " +
+            "with the Events tab timeline to pin down when it was added.\n" +
+            "\n" +
+            "# Note\n" +
+            "Loading stops after the first 1000 rules; the header notes when the store is larger than that.\n" +
+            "\n" +
+            "# Filters\n" +
+            "- All - off by default to hide inactive (disabled) rules; turn it on to show every rule.\n" +
+            "- Narrow the list by Direction, Action, or Profile (dropdowns), or by a regular expression on the " +
+            "rule Name and/or Program path.\n" +
+            "\n" +
             "# Special actions\n" +
-            "- Manage Firewall - opens Windows Defender Firewall with Advanced Security (wf.msc).\n");
+            "- Manage Firewall - opens Windows Defender Firewall with Advanced Security (wf.msc).\n" +
+            "- Right-click a rule to copy its name / program path / audit note, open the program's location, " +
+            "or search the web.\n" +
+            "\n" + Common);
 
         public static readonly HelpInfo Restores = new("System Restore Points",
             "# What this shows\n" +

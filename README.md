@@ -82,6 +82,8 @@ The idea is to correlate these dates against your known Windows patch cadence: c
 
   ![Installed device changes](screens/devices-1.png)
 
+- **DNS** — the live Windows resolver cache (`ipconfig /displaydns`): every name recently resolved and the address it returned. A **public-looking host on a non-public (private/loopback) IP** is flagged `Review` — possibly a redirect / captive portal, or legitimate internal / split-horizon DNS. A **Flush DNS cache** button clears the cache (`ipconfig /flushdns`). Note: it's a live snapshot (entries expire per TTL), and Chrome's Secure DNS (DoH) bypasses this cache.
+
 ### 3. Right-click actions
 
 Several panels let you **right-click a row** to investigate the item directly:
@@ -119,7 +121,7 @@ Run with no arguments to launch the GUI. The headless modes run the same checks 
 | `BrowseSafe.exe --out <file>` | Also write the report text to `<file>` (headless modes only). |
 | `BrowseSafe.exe --help` | Show usage and exit. Also `-h`, `-?`, `/?`. |
 
-**Scopes:** `scan`, `chrome`, `services`, `processes`, `startup`, `installed`, `devices`, `events`, `all`.
+**Scopes:** `scan`, `dns`, `patches`, `chrome`, `services`, `processes`, `startup`, `installed`, `devices`, `events`, `firewall`, `all`.
 
 ```bat
 BrowseSafe.exe --run scan

@@ -1,0 +1,334 @@
+Browse Safe report  -  scope: all  -  2026-06-03 09:35:08
+======================================================================
+
+### Safety Scan ###
+
+1. Current DNS Server(s)
+----------------------------------------------------------------------
+  [INFO] DNS 2001:558:feed::1  -  Wi-Fi
+  [INFO] DNS 2001:558:feed::2  -  Wi-Fi
+  [INFO] DNS 192.168.0.1  -  Wi-Fi  - local/router resolver
+  [PASS] DNS configured  -  3 DNS server(s) across 1 active adapter(s).
+
+2. Connected Router
+----------------------------------------------------------------------
+  [INFO] Default gateway  -  192.168.0.1
+  [PASS] Gateway MAC  -  5C-62-8B-45-2C-E8   (OUI 5C-62-8B = TP-Link Systems Inc)
+  [INFO] UPnP/SSDP  -  Router offered no UPnP description (UPnP/IGD likely disabled). Exact model/firmware can't be read without signing in.
+
+3. Actual Upstream DNS Resolver
+----------------------------------------------------------------------
+  [INFO] Configured resolver  -  2001:558:feed::1  (the address this PC sends queries to).
+  [PASS] True recursive resolver  -  69.252.230.201   (chlm-cns05.nlb.bos1.comcast.net)
+  [INFO] Resolver operator  -  Comcast Cable Communications, LLC  (AS7922 Comcast Cable Communications, LLC)  -  Massachusetts, United States
+  [INFO] What this means  -  Queries ultimately egress via the operator shown above.
+  [INFO] Chrome Secure DNS (DoH)  -  Not set by policy. Chrome default may use DoH (Settings > Privacy > Use secure DNS), which can bypass the resolver above.
+
+4. DNS Lookup Tests (public sites)
+----------------------------------------------------------------------
+  [PASS] www.google.com  -  142.251.154.119, 142.251.152.119, 142.251.157.119, 142.251.151.119, (+12 more)   (60 ms)
+  [PASS] www.yahoo.com  -  69.147.82.61, 69.147.82.60, 2001:4998:1c:800::1000, 2001:4998:1c:800::1001   (64 ms)
+  [PASS] www.cloudflare.com  -  104.16.124.96, 104.16.123.96, 2606:4700::6810:7b60, 2606:4700::6810:7c60   (63 ms)
+  [PASS] github.com  -  140.82.112.3   (59 ms)
+  [PASS] www.microsoft.com  -  2.20.154.94, 2600:1401:d000:481::356e, 2600:1401:d000:48c::356e, 2600:1401:d000:48f::356e   (65 ms)
+  [PASS] en.wikipedia.org  -  208.80.154.224, 2620:0:861:ed1a::1   (61 ms)
+
+5. Cross-Resolver DNS Comparison
+----------------------------------------------------------------------
+  [INFO] Reference resolvers  -  Cloudflare 1.1.1.1, Quad9 9.9.9.9, Google 8.8.8.8  (queried in parallel).
+  [INFO] How to read  -  Cells show how each resolver's answer compares to Local: identical / /24 / /16 / no match / fail. Valid = PASS when Local matches at least one reference resolver.
+  
+  IPv4 (A records  -  prefix tiers /24, /16)
+  Valid Domain             Local   Cloudflare Quad9      Google    
+  ----- ------------------ ------- ---------- ---------- ----------
+  PASS  www.google.com     8 ip    identical  identical  identical 
+  FAIL  www.yahoo.com      2 ip    no match   no match   no match  
+  PASS  www.cloudflare.com 2 ip    identical  identical  identical 
+  PASS  github.com         1 ip    /16        /16        /16       
+  PASS  www.microsoft.com  1 ip    identical  identical  identical 
+  PASS  en.wikipedia.org   1 ip    identical  identical  identical 
+  [WARN] IPv4 domains matched no reference resolver  -  www.yahoo.com - usually geo-distributed CDNs (e.g. Yahoo), occasionally local DNS tampering. Review those rows.
+  
+  IPv6 (AAAA records  -  prefix tiers /64, /48)
+  Valid Domain             Local   Cloudflare Quad9      Google    
+  ----- ------------------ ------- ---------- ---------- ----------
+  PASS  www.google.com     8 ip    identical  identical  identical 
+  FAIL  www.yahoo.com      2 ip    no match   no match   no match  
+  PASS  www.cloudflare.com 2 ip    identical  identical  identical 
+  n/a   github.com         none    fail       fail       fail      
+  PASS  www.microsoft.com  3 ip    identical  identical  identical 
+  PASS  en.wikipedia.org   1 ip    identical  identical  identical 
+  [WARN] IPv6 domains matched no reference resolver  -  www.yahoo.com - usually geo-distributed CDNs (e.g. Yahoo), occasionally local DNS tampering. Review those rows.
+
+6. Hosts File (local DNS overrides)
+----------------------------------------------------------------------
+  [INFO] Path  -  C:\WINDOWS\System32\drivers\etc\hosts
+  [PASS] Host mappings  -  No active overrides (only comments / defaults). Clean.
+
+7. E-mail (MX) DNS Tests
+----------------------------------------------------------------------
+  [INFO] Google / Gmail  (gmail.com)  -  5 designated mail server(s) published via MX.
+  [PASS] MX  gmail-smtp-in.l.google.com  -  pref 5 -> 172.253.62.26, 2607:f8b0:4004:c1b::1b  (matches google.com)
+  [PASS] MX  alt1.gmail-smtp-in.l.google.com  -  pref 10 -> 108.177.123.26, 2800:3f0:4003:c0f::1b  (matches google.com)
+  [PASS] MX  alt2.gmail-smtp-in.l.google.com  -  pref 20 -> 172.253.116.26, 2a00:1450:400b:c02::1a  (matches google.com)
+  [PASS] MX  alt3.gmail-smtp-in.l.google.com  -  pref 30 -> 192.178.223.26, 2a00:1450:4009:c0f::1a  (matches google.com)
+  [PASS] MX  alt4.gmail-smtp-in.l.google.com  -  pref 40 -> 173.194.76.26, 2a00:1450:400c:c00::1a  (matches google.com)
+  [INFO] Yahoo Mail  (yahoo.com)  -  3 designated mail server(s) published via MX.
+  [PASS] MX  mta5.am0.yahoodns.net  -  pref 1 -> 67.195.228.94, 67.195.204.79, 67.195.228.109, (+5 more)  (matches yahoodns.net)
+  [PASS] MX  mta7.am0.yahoodns.net  -  pref 1 -> 67.195.204.74, 98.136.96.74, 98.136.96.75, (+5 more)  (matches yahoodns.net)
+  [PASS] MX  mta6.am0.yahoodns.net  -  pref 1 -> 98.136.96.91, 67.195.204.77, 67.195.228.110, (+5 more)  (matches yahoodns.net)
+
+8. Proxy Configuration
+----------------------------------------------------------------------
+  [PASS] Manual proxy disabled  -  Internet Settings ProxyEnable = 0.
+  [PASS] Automatically detect settings (WPAD)  -  Disabled.
+  [PASS] Overall proxy verdict  -  No proxy configured. Chrome will connect directly.
+
+9. Atomic Clock / Time Sync
+----------------------------------------------------------------------
+  [PASS] NTP time.nist.gov  -  atomic 13:35:15Z  -  local delta +0.3 s (local ahead)
+  [PASS] NTP time.cloudflare.com  -  atomic 13:35:15Z  -  local delta +0.3 s (local ahead)
+  [PASS] NTP time.google.com  -  atomic 13:35:15Z  -  local delta +0.3 s (local ahead)
+  [PASS] HTTP Date (cloudflare.com)  -  server 13:35:16Z  -  local delta +0.5 s (local ahead)
+  [PASS] Clock verdict  -  Local clock is within 5 minutes of atomic time (max delta +0.5 s (local ahead)).
+
+10. Windows Security Features
+----------------------------------------------------------------------
+  [PASS] User Account Control (UAC)  -  Enabled.
+  [WARN] SmartScreen (Explorer)  -  Not configured / default. Verify in Windows Security.
+  [WARN] Antivirus product: Windows Defender  -  Present but not active.
+  [PASS] Antivirus product: CrowdStrike Falcon Sensor  -  Enabled & active.
+  [INFO] Microsoft Defender  -  Passive - "CrowdStrike Falcon Sensor" is the active antivirus.
+  [PASS] Firewall - Domain profile  -  Enabled.
+  [PASS] Firewall - Private profile  -  Enabled.
+  [PASS] Firewall - Public profile  -  Enabled.
+  [INFO] Secure Boot  -  Unknown - run elevated to read this, or system is non-UEFI.
+
+### Chrome ###
+
+Chrome Executable & Integrity
+----------------------------------------------------------------------
+  [INFO] Path  -  C:\Program Files\Google\Chrome\Application\chrome.exe
+  [INFO] Version  -  148.0.7778.217
+  [INFO] SHA-256  -  2397c84d4d1bf909344248b91d39f66a7a09e7983ea3059edbf202fa6e01f79d
+  [PASS] Digital signature  -  Valid  -  CN=Google LLC
+
+Chrome Extensions
+----------------------------------------------------------------------
+  [INFO] Adblock Plus - free ad blocker  -  v4.37.1  mod 2026-04-29  MV3  [Audrey]  id=cfhdojbkjhnklbpkdaibdccddilifddb
+  [INFO] Application Launcher For Drive (by Google)  -  v3.10  mod 2024-04-19  MV3  [Audrey]  id=lmjegmlicamnimmfhcmpkclmigmmcbeh
+  [WARN] Chrome Web Store Payments  -  v1.0.0.6  mod 2024-02-08  MV2  [Audrey]  MV unsupported, id=nmmhkkegccagdldgiimedpiccmgmieda
+  [INFO] Enhanced Image Viewer  -  v6.20  mod 2026-04-29  MV3  [Audrey]  id=gefiaaeadjbmhjndnhedfccdjjlgjhho
+  [INFO] Google Docs Offline  -  v1.104.1  mod 2026-04-29  MV3  [Audrey]  id=ghbmnnjooekpmoecnnnilnnbdlolhkhi
+  [INFO] Application Launcher For Drive (by Google)  -  v3.10  mod 2024-04-14  MV3  [Dennis]  id=lmjegmlicamnimmfhcmpkclmigmmcbeh
+  [INFO] Canvas downloader. Find and export.  -  v1.4.0  mod 2026-03-28  MV3  [Dennis]  id=dgfcgcafnnbdpojemnkiiilnnghebgja
+  [WARN] Chrome Web Store Payments  -  v1.0.0.6  mod 2024-01-24  MV2  [Dennis]  MV unsupported, id=nmmhkkegccagdldgiimedpiccmgmieda
+  [WARN] Code Syntax Highlighter  -  v1.0.2.1  mod 2024-01-24  MV2  [Dennis]  MV unsupported, id=lchdbdgjkljmidgfibljbdhnfnjemfdg
+  [INFO] Download table as CSV  -  v1.8  mod 2025-05-19  MV3  [Dennis]  id=jgeonblahchgiadgojdjilffklaihalj
+  [WARN] Entanglement Web App  -  v3.4.9  mod 2024-01-24  MV2  [Dennis]  MV unsupported, id=aciahcmjmecflokailenpkdchphgkefd
+  [INFO] Google Docs Offline  -  v1.106.1  mod 2026-06-03  MV3  [Dennis]  id=ghbmnnjooekpmoecnnnilnnbdlolhkhi
+  [INFO] Image Extractor  -  v1.2  mod 2025-09-03  MV3  [Dennis]  id=aenndgkopjmlkcbaohiolnlcfacniknc
+  [WARN] JSON Viewer  -  v0.18.1  mod 2024-01-24  MV2  [Dennis]  MV unsupported, id=gbmdgpbipfallnflgajpaliibnhdgobh
+  [INFO] Okta Browser Plugin  -  v6.46.0  mod 2026-05-23  MV3  [Dennis]  id=glnpjglilkicbckjpbgcfkogebgllemb
+  [INFO] Table Capture  -  v11.0.40  mod 2026-05-16  MV3  [Dennis]  id=iebpjdmgckacbodjpijphcplhebcmeop
+  [INFO] Toggle JavaScript  -  v2.0  mod 2024-02-24  MV3  [Dennis]  id=cidlcjdalomndpeagkjpnefhljffbnlo
+  [INFO] YouTube Ad Auto-skipper  -  v2.2.0  mod 2024-11-24  MV3  [Dennis]  id=lokpenepehfdekijkebhpnpcjjpngpnd
+  [INFO] Application Launcher For Drive (by Google)  -  v3.10  mod 2025-05-27  MV3  [LanDen-app]  id=lmjegmlicamnimmfhcmpkclmigmmcbeh
+  [WARN] Chrome Web Store Payments  -  v1.0.0.6  mod 2024-01-30  MV2  [LanDen-app]  MV unsupported, id=nmmhkkegccagdldgiimedpiccmgmieda
+  [INFO] Google Docs Offline  -  v1.92.1  mod 2025-05-27  MV3  [LanDen-app]  id=ghbmnnjooekpmoecnnnilnnbdlolhkhi
+  [INFO] 1Password – Password Manager  -  v8.12.22.17  mod 2026-06-03  MV3  [Work]  id=aeblfdkhhhdcdjpifhhbdiojplfjncoa
+  [INFO] Application Launcher For Drive (by Google)  -  v3.10  mod 2024-04-14  MV3  [Work]  id=lmjegmlicamnimmfhcmpkclmigmmcbeh
+  [INFO] Application Launcher For Drive (by Google)  -  v3.10  mod 2025-09-25  MV3  [Work]  id=lmjegmlicamnimmfhcmpkclmigmmcbeh
+  [INFO] Checker Plus for Google Calendar™  -  v45.2  mod 2026-05-27  MV3  [Work]  id=hkhggnncdpfibdhinjiegagmopldibha
+  [WARN] Chrome Web Store Payments  -  v1.0.0.6  mod 2023-12-19  MV2  [Work]  MV unsupported, id=nmmhkkegccagdldgiimedpiccmgmieda
+  [WARN] Chrome Web Store Payments  -  v1.0.0.6  mod 2025-09-25  MV2  [Work]  MV unsupported, id=nmmhkkegccagdldgiimedpiccmgmieda
+  [INFO] Cisco Webex Extension  -  v2.0.4  mod 2023-12-19  MV3  [Work]  id=jlhmfgmfgeifomenelglieieghnjghma
+  [WARN] Git Master  -  v1.17.1  mod 2023-12-19  MV2  [Work]  MV unsupported, id=klmeolbcejnhefkapdchfhlhhjgobhmo
+  [INFO] Google Docs Offline  -  v1.106.1  mod 2026-06-03  MV3  [Work]  id=ghbmnnjooekpmoecnnnilnnbdlolhkhi
+  [INFO] ...  -  7 more not shown.
+  [INFO] Total extensions  -  37 across all profiles. Review any you don't recognise at chrome://extensions.
+
+### Services ###
+
+Services (third-party, running)
+----------------------------------------------------------------------
+  [INFO] Service inventory  -  337 services total, 20 third-party running (outside C:\WINDOWS).
+  [INFO] Zoom Sharing Service  -  Auto  -  modified 2026-05-18  -  C:\Program Files\Common Files\Zoom\Support\CptService.exe
+  [INFO] Malwarebytes Windows Firewall Control  -  Auto  -  modified 2026-05-16  -  C:\Program Files\Malwarebytes\Windows Firewall Control\wfcs.exe
+  [INFO] Microsoft Office Click-to-Run Service  -  Auto  -  modified 2026-05-14  -  C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeClickToRun.exe
+  [INFO] Microsoft Intune Management Extension  -  Auto  -  modified 2026-04-16  -  C:\Program Files (x86)\Microsoft Intune Management Extension\Microsoft.Management.Services.IntuneWindowsAgent.exe
+  [INFO] CrowdStrike Falcon Sensor Service  -  Auto  -  modified 2026-04-04  -  C:\Program Files\CrowdStrike\CSFalconService.exe
+  [INFO] Okta Authenticator Service  -  Auto  -  modified 2026-04-03  -  C:\Program Files\Okta\Services\Authenticator Service\OktaAuthenticatorService.exe
+  [INFO] Okta Feature Flag Service  -  Auto  -  modified 2026-04-03  -  C:\Program Files\Okta\Services\Feature Flag Service\OktaFeatureFlagService.exe
+  [INFO] Okta Auto Update Service  -  Auto  -  modified 2026-03-31  -  C:\Program Files\Okta\UpdateService\Okta.Coordinator.Service.exe
+  [INFO] ZSATunnel  -  Manual  -  modified 2026-03-31  -  C:\Program Files\Zscaler\ZSATunnel\ZSATunnel.exe
+  [INFO] ZSAService  -  Auto  -  modified 2026-03-31  -  C:\Program Files\Zscaler\ZSAService\ZSAService.exe
+  [INFO] ZSATrayManager  -  Manual  -  modified 2026-03-31  -  C:\Program Files\Zscaler\ZSATrayManager\ZSATrayManager.exe
+  [INFO] ZSAUpm  -  Manual  -  modified 2026-03-28  -  C:\Program Files\Zscaler\ZSAUpm\ZSAUpm.exe
+  [INFO] Intel(R) Driver & Support Assistant  -  Auto  -  modified 2026-03-24  -  C:\Program Files (x86)\Intel\Driver and Support Assistant\x86\DSAService.exe
+  [INFO] Intel(R) Driver & Support Assistant Updater  -  Auto  -  modified 2026-03-24  -  C:\Program Files (x86)\Intel\Driver and Support Assistant\x86\DSAUpdateService.exe
+  [INFO] Intelr Graphics Software Service  -  Auto  -  modified 2026-03-11  -  C:\Program Files\Intel\Intel Graphics Software\IntelGraphicsSoftware.Service.exe
+  [INFO] PresentMon Shared Service  -  Auto  -  modified 2026-01-15  -  C:\Program Files\Intel\PresentMonSharedService\PresentMonService.exe
+  [INFO] NetLimiter Service  -  Auto  -  modified 2025-11-18  -  C:\Program Files\Locktime Software\NetLimiter\NLSvc.exe
+  [INFO] Make Me Admin  -  Auto  -  modified 2025-11-13  -  C:\Program Files\Make Me Admin\MakeMeAdminService.exe
+  [INFO] Qualys Cloud Agent  -  Auto  -  modified 2025-11-10  -  C:\Program Files\Qualys\QualysAgent\QualysAgent.exe
+  [INFO] CCleaner Performance Optimizer Service  -  Manual  -  modified 2025-08-14  -  C:\opt\util\CCleaner\CCleanerPerformanceOptimizerService.exe
+
+### Processes ###
+
+Processes (non-standard locations)
+----------------------------------------------------------------------
+  [INFO] claude.exe  -  pid 7676  -  modified 2026-06-03  -  C:\Users\DennisLang\.local\bin\claude.exe
+  [INFO] BrowseSafe.exe  -  pid 31848  -  modified 2026-05-31  -  c:\opt\bin\BrowseSafe.exe
+  [INFO] WinWidgetBattery.exe  -  pid 12552  -  modified 2026-05-30  -  C:\opt\bin\winwidgets\WinWidgetBattery.exe
+  [INFO] WinWidgetTimer.exe  -  pid 25628  -  modified 2026-05-27  -  C:\opt\bin\winwidgets\WinWidgetTimer.exe
+  [INFO] slack.exe  -  pid 31032  -  modified 2026-05-20  -  C:\Users\DennisLang\AppData\Local\slack\app-4.50.121\slack.exe
+  [INFO] WinWidgetTime.exe  -  pid 26180  -  modified 2026-05-17  -  C:\opt\bin\winwidgets\WinWidgetTime.exe
+  [INFO] PowerToys.LightSwitchService.exe  -  pid 15836  -  modified 2026-04-29  -  C:\opt\dev\PowerToys\LightSwitchService\PowerToys.LightSwitchService.exe
+  [INFO] PowerToys.PowerLauncher.exe  -  pid 28520  -  modified 2026-04-29  -  C:\opt\dev\PowerToys\PowerToys.PowerLauncher.exe
+  [INFO] Microsoft.CmdPal.Ext.PowerToys.exe  -  pid 2728  -  modified 2026-04-29  -  C:\opt\dev\PowerToys\WinUI3Apps\Microsoft.CmdPal.Ext.PowerToys.exe
+  [INFO] PowerToys.exe  -  pid 31440  -  modified 2026-04-29  -  C:\opt\dev\PowerToys\PowerToys.exe
+  [INFO] PowerToys.QuickAccess.exe  -  pid 19144  -  modified 2026-04-29  -  C:\opt\dev\PowerToys\WinUI3Apps\PowerToys.QuickAccess.exe
+  [INFO] PowerToys.AdvancedPaste.exe  -  pid 15756  -  modified 2026-04-29  -  C:\opt\dev\PowerToys\WinUI3Apps\PowerToys.AdvancedPaste.exe
+  [INFO] PowerToys.Peek.UI.exe  -  pid 21316  -  modified 2026-04-29  -  C:\opt\dev\PowerToys\WinUI3Apps\PowerToys.Peek.UI.exe
+  [INFO] Process inventory  -  217 running total, 13 outside standard program locations (review).
+
+### Startup ###
+
+Startup Programs (auto-run)
+----------------------------------------------------------------------
+  [INFO] JetBrains Toolbox  -  HKCU\Run  -  added 2026-06-03  -  C:\Users\DennisLang\AppData\Local\JetBrains\Toolbox\bin\jetbrains-toolbox.exe
+  [INFO] GoogleDriveFS  -  HKCU\Run  -  added 2026-06-03  -  C:\Program Files\Google\Drive File Stream\125.0.0.0\GoogleDriveFS.exe
+  [INFO] Amazon Photos  -  HKCU\Run  -  added 2026-06-03  -  C:\Users\DennisLang\AppData\Local\Amazon Drive\AmazonPhotos.exe
+  [INFO] NetLimiter  -  HKCU\Run  -  added 2026-06-03  -  C:\Program Files\Locktime Software\NetLimiter\nlclientapp.exe
+  [INFO] WinWidgetTime  -  HKCU\Run  -  added 2026-06-03  -  c:\opt\bin\winwidgets\WinWidgetTime.exe
+  [INFO] WinWidgetBattery  -  HKCU\Run  -  added 2026-06-03  -  c:\opt\bin\winwidgets\WinWidgetBattery.exe
+  [INFO] WinWidgetTimer  -  HKCU\Run  -  added 2026-06-03  -  c:\opt\bin\winwidgets\WinWidgetTimer.exe
+  [INFO] com.squirrel.slack.slack  -  HKCU\Run  -  added 2026-06-03  -  C:\Users\DennisLang\AppData\Local\slack\slack.exe
+  [INFO] MicrosoftCopilotAutoLaunch_2345269703C1A773058E77FC689D710B  -  HKCU\Run  -  added 2026-06-03  -  C:\Program Files (x86)\Microsoft\Copilot\Application\mscopilot.exe
+  [INFO] MSN Money  -  Startup (user)  -  added 2025-05-20  -  C:\Program Files (x86)\Microsoft\Edge\Application\msedge_proxy.exe
+  [INFO] Dropbox  -  HKLM\Run (WOW64)  -  added 2026-03-28  -  C:\Program Files (x86)\Dropbox\Client\Dropbox.exe
+  [INFO] SecurityHealth  -  HKLM\Run  -  added 2026-05-23  -  C:\WINDOWS\system32\SecurityHealthSystray.exe
+  [INFO] RtkAudUService  -  HKLM\Run  -  added 2026-05-23  -  C:\WINDOWS\System32\DriverStore\FileRepository\realtekservice.inf_amd64_e54441f6cc56b0cb\RtkAudUService64.exe
+  [INFO] WavesSvc  -  HKLM\Run  -  added 2026-05-23  -  C:\WINDOWS\System32\DriverStore\FileRepository\wavesapo12de.inf_amd64_f5cc64c07bd9d637\WavesSvc64.exe
+  [INFO] Malwarebytes Windows Firewall Control  -  HKLM\Run  -  added 2026-05-23  -  C:\Program Files\Malwarebytes\Windows Firewall Control\wfcUI.exe
+  [INFO] Intel Endurance Gaming  -  HKLM\Run  -  added 2026-05-23  -  C:\Program Files\Intel\EnduranceGaming\EnduranceGamingProcess.exe
+  [INFO] CiscoSpark  -  HKLM\Run  -  added 2026-05-23  -  C:\ProgramData\Microsoft\Windows\Start
+  [INFO] 1Password  -  HKLM\Run  -  added 2026-05-23  -  C:\Program Files\1Password\app\8\1Password.exe
+  [INFO] F5_SAM_Client  -  HKLM\Run (WOW64)  -  added 2026-03-28  -  C:\Program Files (x86)\F5 VPN\f5fpclientW.exe
+  [INFO] Intel® Graphics Software  -  HKLM\Run (WOW64)  -  added 2026-03-28  -  C:\Program Files\Intel\Intel Graphics Software\IntelGraphicsSoftware.exe
+  [INFO] Total startup items  -  20 auto-run entries.
+
+### Installed ###
+
+Installed Programs (most recent first)
+----------------------------------------------------------------------
+  [WARN] Node.js  -  2026-06-03  v24.16.0  -  Node.js Foundation   (installed/changed in last 14 days)
+  [WARN] Copilot  -  2026-05-30  v148.0.3967.96  -  Microsoft Corporation   (installed/changed in last 14 days)
+  [WARN] Microsoft Edge  -  2026-05-30  v148.0.3967.96  -  Microsoft Corporation   (installed/changed in last 14 days)
+  [WARN] Microsoft Edge WebView2 Runtime  -  2026-05-30  v148.0.3967.96  -  Microsoft Corporation   (installed/changed in last 14 days)
+  [WARN] Wise Program Uninstaller  -  2026-05-30  v3.2.9  -  WiseCleaner Technology Co., Ltd.   (installed/changed in last 14 days)
+  [WARN] IntelliJ IDEA  -  2026-05-30  v2026.2 EAP  -  JetBrains s.r.o.   (installed/changed in last 14 days)
+  [WARN] Dropbox  -  2026-05-27  v254.4.2518  -  Dropbox, Inc.   (installed/changed in last 14 days)
+  [WARN] Zscaler  -  2026-05-27  v4.8.0.156  -  Zscaler Inc.   (installed/changed in last 14 days)
+  [WARN] Microsoft OneDrive  -  2026-05-26  v26.078.0426.0002  -  Microsoft Corporation   (installed/changed in last 14 days)
+  [WARN] Mozilla Firefox (x64 en-US)  -  2026-05-24  v151.0.1  -  Mozilla   (installed/changed in last 14 days)
+  [WARN] 7-Zip 24.09 (x64 edition)  -  2026-05-24  v24.09.00.0  -  Igor Pavlov   (installed/changed in last 14 days)
+  [WARN] 7-Zip 25.01 (x64 edition)  -  2026-05-24  v25.01.00.0  -  Igor Pavlov   (installed/changed in last 14 days)
+  [WARN] JetBrains dotPeek 2026.1.2  -  2026-05-23  v2026.1.2  -  JetBrains s.r.o.   (installed/changed in last 14 days)
+  [WARN] ImageMagick 7.1.2-23 Q8 (64-bit) (2026-05-17)  -  2026-05-23  v7.1.2.23  -  ImageMagick Studio LLC   (installed/changed in last 14 days)
+  [WARN] 1Password  -  2026-05-23  v8.12.21  -  Agilebits Inc.   (installed/changed in last 14 days)
+  [WARN] Zoom Workplace (64-bit)  -  2026-05-23  v7.0.38856  -  Zoom   (installed/changed in last 14 days)
+  [WARN] AWS Command Line Interface v2  -  2026-05-23  v2.34.53.0  -  Amazon Web Services   (installed/changed in last 14 days)
+  [WARN] CrowdStrike Sensor Platform  -  2026-05-23  v7.36.20805.0  -  CrowdStrike, Inc.   (installed/changed in last 14 days)
+  [WARN] CrowdStrike Device Control  -  2026-05-23  v7.35.20865.0  -  CrowdStrike, Inc.   (installed/changed in last 14 days)
+  [WARN] CrowdStrike Windows Sensor  -  2026-05-23  v7.36.20805.0  -  CrowdStrike, Inc.   (installed/changed in last 14 days)
+  [WARN] Microsoft Intune Management Extension  -  2026-05-23  v1.101.111.0  -  Microsoft Corporation   (installed/changed in last 14 days)
+  [WARN] PyCharm  -  2026-05-23  v2026.2 EAP  -  JetBrains s.r.o.   (installed/changed in last 14 days)
+  [INFO] Slack  -  2026-05-20  v4.50.121  -  Slack Technologies Inc.
+  [INFO] Okta Verify  -  2026-05-16  v6.9.0.0  -  Okta, Inc.
+  [INFO] AutoHotkey (user)  -  2026-05-16  v2.0.26  -  AutoHotkey Foundation LLC
+  [INFO] Microsoft Windows Desktop Runtime - 9.0.16 (x64)  -  2026-05-16  v9.0.16.36030  -  Microsoft Corporation
+  [INFO] Microsoft Windows Desktop Runtime - 8.0.27 (x64)  -  2026-05-16  v8.0.27.36030  -  Microsoft Corporation
+  [INFO] Malwarebytes Windows Firewall Control  -  2026-05-16  v6.32.0.0  -  BiniSoft.org
+  [INFO] Windows Software Development Kit - Windows 10.0.26100.8249  -  2026-05-16  v10.1.26100.8249  -  Microsoft Corporation
+  [INFO] Microsoft Visual C++ 2015-2022 Redistributable (x64) - 14.51.36231  -  2026-05-16  v14.51.36231.0  -  Microsoft Corporation
+  [INFO] ...  -  374 more not shown.
+  [INFO] Total installed  -  404 program(s) registered.
+
+### Devices ###
+
+Device Drivers (third-party)
+----------------------------------------------------------------------
+  [INFO] Driver inventory  -  252 signed drivers total, 70 from third-party providers.
+  [INFO] CrowdStrike Device Control Sensor Interface  -  CrowdStrike  v7.10.18054.0  vendor 2023-11-30  changed 2026-05-23
+  [INFO] Intel(R) Platform Monitoring Technology Driver  -  Intel(R) Platform Monitoring Technology Device  v10.0.26100.8328  vendor 2006-06-20  changed 2026-05-20
+  [INFO] Intel(R) Wireless Bluetooth(R)  -  Intel Corporation  v24.40.0.3  vendor 2026-03-27  changed 2026-05-04
+  [INFO] Intel(R) Wi-Fi 6E AX211 160MHz  -  Intel  v24.40.0.4  vendor 2026-04-12  changed 2026-04-28
+  [INFO] Realtek Audio  -  Realtek Semiconductor Corp.  v6.0.9835.3  vendor 2025-05-19  changed 2026-04-24
+  [INFO] Intelr Smart Sound Technology for Bluetoothr LE Audio  -  Intel(R) Corporation  v10.29.0.12464  vendor 2025-10-23  changed 2026-04-24
+  [INFO] Intelr Smart Sound Technology Detection Verification  -  Intel(R) Corporation  v1.0.4085.0  vendor 2025-10-19  changed 2026-04-24
+  [INFO] Intelr Smart Sound Technology for Bluetoothr Audio  -  Intel(R) Corporation  v10.29.0.12464  vendor 2025-10-23  changed 2026-04-24
+  [INFO] Intelr Smart Sound Technology for USB Audio  -  Intel(R) Corporation  v10.29.0.12464  vendor 2025-10-23  changed 2026-04-24
+  [INFO] Intelr Smart Sound Technology OED  -  Intel(R) Corporation  v10.29.0.12464  vendor 2025-10-23  changed 2026-04-24
+  [INFO] Intelr Smart Sound Technology BUS  -  Intel(R) Corporation  v10.29.0.12464  vendor 2025-10-23  changed 2026-04-24
+  [INFO] Intel(R) HID Event Filter  -  Intel(R) Corporation  v2.2.2.17  vendor 2025-06-03  changed 2026-04-24
+  [INFO] HD Audio Driver for Display Audio  -  Intel Corporation  v32.0.101.7085  vendor 2026-03-02  changed 2026-03-28
+  [INFO] HD Audio Driver for Display Audio  -  Intel Corporation  v32.0.101.7085  vendor 2026-03-02  changed 2026-03-28
+  [INFO] Intel(R) Iris(R) Xe Graphics  -  Intel Corporation  v32.0.101.7085  vendor 2026-03-02  changed 2026-03-28
+  [INFO] Intel(R) Serial IO I2C Host Controller - 51E9  -  Intel Corporation  v30.100.2531.31  vendor 2025-07-29  changed 2026-03-28
+  [INFO] Intel(R) Serial IO I2C Host Controller - 51E8  -  Intel Corporation  v30.100.2531.31  vendor 2025-07-29  changed 2026-03-28
+  [INFO] Intel(R) Serial IO GPIO Host Controller - INTC1055  -  Intel Corporation  v30.100.2531.31  vendor 2025-07-29  changed 2026-03-28
+  [INFO] Intel(R) Management Engine WMI Provider  -  Intel  v2522.8.2.0  vendor 2025-05-26  changed 2026-02-11
+  [INFO] Intel(R) Wireless Manageability  -  Intel  v2543.98.178.0  vendor 2025-10-19  changed 2026-02-11
+  [INFO] Intel(R) Management Engine Interface #1  -  Intel  v2540.8.7.0  vendor 2025-09-27  changed 2026-02-11
+  [INFO] NVIDIA RTX A500 Laptop GPU  -  NVIDIA  v32.0.15.8195  vendor 2025-11-17  changed 2026-02-11
+  [INFO] Control Vault w/ Fingerprint Touch Sensor  -  Broadcom Corporation  v5.15.15.8  vendor 2025-09-07  changed 2026-01-17
+  [INFO] Dell ControlVault w/ Fingerprint Touch Sensor  -  Dell  v5.15.19.20  vendor 2025-10-14  changed 2026-01-17
+  [INFO] Intel(R) Ethernet Connection (23) I219-LM  -  Intel  v12.19.2.65  vendor 2025-06-16  changed 2025-12-31
+  [INFO] Intel(R) System Config IPF Extension Provider  -  Intel  v3.2.1002.0  vendor 2025-07-02  changed 2025-12-31
+  [INFO] Intel(R) SoC Thermal IPF Extension Provider  -  Intel  v3.3.1003.0  vendor 2025-07-02  changed 2025-12-31
+  [INFO] Intel(R) PMT IPF Extension Provider  -  Intel  v3.3.1003.0  vendor 2025-07-02  changed 2025-12-31
+  [INFO] Intel(R) PerfMon IPF Extension Provider  -  Intel  v1.2.1003.0  vendor 2025-07-02  changed 2025-12-31
+  [INFO] Intel(R) Modern Standby IPF Extension Provider  -  Intel  v3.1.1002.0  vendor 2025-07-02  changed 2025-12-31
+  [INFO] ...  -  40 more not shown.
+
+### Event Log ###
+
+Recent Event Log issues (last 7 days)
+----------------------------------------------------------------------
+  [WARN] Event summary  -  43 events  -  1 security-significant, 0 critical, 42 error.
+  [WARN] 2026-05-30 09:29  System  #7045  -  Information  -  Service Control Manager  -  A service was installed in the system.
+  [INFO] 2026-06-03 08:40  Application  #1013  -  Error  -  MsiInstaller  -  Product: 1Password -- A more recent version of 1Password is already installed on this computer.
+  [INFO] 2026-06-03 08:31  Application  #1013  -  Error  -  MsiInstaller  -  Product: 1Password -- A more recent version of 1Password is already installed on this computer.
+  [INFO] 2026-06-03 08:30  Application  #1013  -  Error  -  MsiInstaller  -  Product: Google Chrome -- A newer version of the Google Chrome enterprise installer is already installed.
+  [INFO] 2026-06-03 08:30  Application  #1013  -  Error  -  MsiInstaller  -  Product: 1Password -- A more recent version of 1Password is already installed on this computer.
+  [INFO] 2026-06-03 08:28  Application  #1013  -  Error  -  MsiInstaller  -  Product: Zoom Workplace (64-bit) -- Your administrator has limited your ability to install this version of Zoom because ...
+  [INFO] 2026-06-03 08:27  System  #21  -  Error  -  Microsoft-Windows-HAL  -  The hardware real-time clock was not set because evaluation of the ACPI Time and Alarm Device method failed.  Status: 0x...
+  [INFO] 2026-06-03 08:27  System  #20  -  Error  -  Microsoft-Windows-HAL  -  The hardware real-time clock was not queried because evaluation of the ACPI Time and Alarm Device method failed.  Status...
+  [INFO] 2026-06-03 08:27  System  #7011  -  Error  -  Service Control Manager  -  A timeout (30000 milliseconds) was reached while waiting for a transaction response from the ZSATunnel service.
+  [INFO] 2026-06-03 08:27  System  #7011  -  Error  -  Service Control Manager  -  A timeout (30000 milliseconds) was reached while waiting for a transaction response from the ZSATunnel service.
+  [INFO] 2026-06-03 08:26  System  #7011  -  Error  -  Service Control Manager  -  A timeout (30000 milliseconds) was reached while waiting for a transaction response from the ZSATunnel service.
+  [INFO] 2026-06-03 08:26  System  #11  -  Error  -  Microsoft-Windows-Security-Kerberos  -  The Distinguished Name in the subject field of your smart card logon certificate does not contain enough information to ...
+  [INFO] 2026-06-03 08:26  System  #10317  -  Error  -  Microsoft-Windows-NDIS  -  Miniport Microsoft Wi-Fi Direct Virtual Adapter #2, {f7f751cb-6dce-4614-87ab-07da49e45722}, had event Fatal error: The m...
+  [INFO] 2026-05-31 20:37  System  #21  -  Error  -  Microsoft-Windows-HAL  -  The hardware real-time clock was not set because evaluation of the ACPI Time and Alarm Device method failed.  Status: 0x...
+  [INFO] 2026-05-31 20:37  System  #20  -  Error  -  Microsoft-Windows-HAL  -  The hardware real-time clock was not queried because evaluation of the ACPI Time and Alarm Device method failed.  Status...
+  [INFO] 2026-05-31 15:28  System  #11  -  Error  -  Microsoft-Windows-Security-Kerberos  -  The Distinguished Name in the subject field of your smart card logon certificate does not contain enough information to ...
+  [INFO] 2026-05-31 14:45  System  #10010  -  Error  -  Microsoft-Windows-DistributedCOM  -  The server {F4DF18B4-A2CF-4B0A-8D62-954CD6AD2E33} did not register with DCOM within the required timeout.
+  [INFO] 2026-05-31 11:08  Application  #1013  -  Error  -  MsiInstaller  -  Product: Google Chrome -- A newer version of the Google Chrome enterprise installer is already installed.
+  [INFO] 2026-05-31 11:07  Application  #1013  -  Error  -  MsiInstaller  -  Product: Zoom Workplace (64-bit) -- Your administrator has limited your ability to install this version of Zoom because ...
+  [INFO] 2026-05-31 10:59  Application  #1013  -  Error  -  MsiInstaller  -  Product: 1Password -- A more recent version of 1Password is already installed on this computer.
+  [INFO] 2026-05-31 10:57  System  #10010  -  Error  -  Microsoft-Windows-DistributedCOM  -  The server {338B40F9-9D68-4B53-A793-6B9AA0C5F63B} did not register with DCOM within the required timeout.
+  [INFO] 2026-05-31 10:55  System  #21  -  Error  -  Microsoft-Windows-HAL  -  The hardware real-time clock was not set because evaluation of the ACPI Time and Alarm Device method failed.  Status: 0x...
+  [INFO] 2026-05-31 10:55  System  #20  -  Error  -  Microsoft-Windows-HAL  -  The hardware real-time clock was not queried because evaluation of the ACPI Time and Alarm Device method failed.  Status...
+  [INFO] 2026-05-31 10:03  System  #11  -  Error  -  Microsoft-Windows-Security-Kerberos  -  The Distinguished Name in the subject field of your smart card logon certificate does not contain enough information to ...
+  [INFO] 2026-05-31 10:03  System  #4199  -  Error  -  Tcpip  -  The system detected an address conflict for IP address 192.168.68.63 with the system having network hardware address 74-...
+  [INFO] 2026-05-31 10:03  System  #10317  -  Error  -  Microsoft-Windows-NDIS  -  Miniport Microsoft Wi-Fi Direct Virtual Adapter #2, {f7f751cb-6dce-4614-87ab-07da49e45722}, had event Fatal error: The m...
+  [INFO] 2026-05-31 03:20  System  #4199  -  Error  -  Tcpip  -  The system detected an address conflict for IP address 192.168.68.63 with the system having network hardware address 74-...
+  [INFO] 2026-05-30 21:43  System  #21  -  Error  -  Microsoft-Windows-HAL  -  The hardware real-time clock was not set because evaluation of the ACPI Time and Alarm Device method failed.  Status: 0x...
+  [INFO] 2026-05-30 21:43  System  #20  -  Error  -  Microsoft-Windows-HAL  -  The hardware real-time clock was not queried because evaluation of the ACPI Time and Alarm Device method failed.  Status...
+  [INFO] 2026-05-30 21:28  Application  #1023  -  Error  -  .NET Runtime  -  Description: A .NET application failed.
+  [INFO] ...  -  13 more not shown.
+
+======================================================================
+VERDICT: CAUTION - review the WARN items.

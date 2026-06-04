@@ -63,7 +63,8 @@ namespace BrowseSafe
         private List<CheckGroup> _lastGroups = new();
 
         public ResultsView(string runLabel, string intro,
-            IReadOnlyList<(string Label, Func<CheckGroup> Run)> steps, bool reportVerdict)
+            IReadOnlyList<(string Label, Func<CheckGroup> Run)> steps, bool reportVerdict,
+            HelpInfo? help = null)
         {
             _steps = steps;
             _reportVerdict = reportVerdict;
@@ -93,6 +94,17 @@ namespace BrowseSafe
             };
             top.Controls.Add(_runButton);
             top.Controls.Add(_status);
+
+            if (help != null)
+            {
+                var helpBtn = HelpUi.CreateButton(help);
+                helpBtn.Top = 7;
+                helpBtn.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                top.Controls.Add(helpBtn);
+                void LayoutHelp() => helpBtn.Left = Math.Max(0, top.ClientSize.Width - helpBtn.Width - 8);
+                top.SizeChanged += (_, _) => LayoutHelp();
+                LayoutHelp();
+            }
 
             _output = new RichTextBox
             {

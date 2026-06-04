@@ -245,6 +245,7 @@ namespace BrowseSafe
             _scanView.Completed += OnScanCompleted;
 
             AddViewTab("Patches", "patches", TabViews.BuildPatches());
+            AddViewTab("DNS", "dns", TabViews.BuildDns());
             AddViewTab("Chrome", "chrome", TabViews.BuildChrome());
             AddViewTab("Services", "services", TabViews.BuildServices());
             AddViewTab("Processes", "processes", TabViews.BuildProcesses());
@@ -306,7 +307,7 @@ namespace BrowseSafe
         private ResultsView AddTab(string title, string scope, string runLabel, string intro,
             (string, Func<CheckGroup>)[] steps, bool reportVerdict)
         {
-            var view = new ResultsView(runLabel, intro, steps, reportVerdict);
+            var view = new ResultsView(runLabel, intro, steps, reportVerdict, TabHelp.Scan);
             AddViewTab(title, scope, view);
             return view;
         }
@@ -361,6 +362,8 @@ namespace BrowseSafe
         private static readonly Dictionary<string, string> BannerTitles = new()
         {
             ["scan"] = "Local network configuration",
+            ["dns"] = "DNS resolver cache",
+            ["patches"] = "Installed Windows patches",
             ["chrome"] = "Chrome browser and extensions",
             ["services"] = "3rd party background services",
             ["processes"] = "Running processes",
@@ -368,6 +371,7 @@ namespace BrowseSafe
             ["installed"] = "Installed program changes",
             ["devices"] = "Installed device changes",
             ["events"] = "Recent system & security events",
+            ["firewall"] = "Windows Firewall configuration",
         };
 
         /// <summary>Tab/banner background colour for a severity (selected = stronger shade).</summary>

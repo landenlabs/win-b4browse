@@ -9,6 +9,7 @@ using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace BrowseSafe
@@ -595,7 +596,7 @@ $r | ConvertTo-Json -Compress -Depth 5
         {
             // -EncodedCommand (base64 UTF-16LE) runs multi-line scripts reliably and
             // sidesteps stdin/quoting issues. Progress/verbose streams go to stderr,
-            // which we don't read, so stdout stays clean JSON.
+            // which we drain but otherwise ignore, so stdout stays clean JSON.
             string full = "$ProgressPreference='SilentlyContinue';\n" + script;
             string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(full));
 
@@ -615,10 +616,23 @@ $r | ConvertTo-Json -Compress -Depth 5
                 using var proc = Process.Start(psi);
                 if (proc == null) return null;
 
-                string output = proc.StandardOutput.ReadToEnd();
-                proc.WaitForExit(30000);
+                // Read stdout AND stderr concurrently. Reading only stdout to EOF while
+                // stderr is redirected risks a deadlock: if the child fills the (small)
+                // stderr pipe buffer it blocks on writing stderr and never closes stdout,
+                // so a synchronous stdout ReadToEnd would wait forever. Draining both on
+                // their own tasks and bounding the wait removes that hang and guarantees
+                // we give up (and kill the child) after the timeout instead of leaking it.
+                Task<string> outTask = proc.StandardOutput.ReadToEndAsync();
+                Task<string> errTask = proc.StandardError.ReadToEndAsync();
 
-                output = output.Trim();
+                if (!Task.WaitAll(new Task[] { outTask, errTask }, 30000))
+                {
+                    try { proc.Kill(entireProcessTree: true); } catch { /* already exited */ }
+                    return null;   // killing closes the pipes; the read tasks unblock and are dropped
+                }
+                proc.WaitForExit();
+
+                string output = outTask.Result.Trim();
                 if (string.IsNullOrEmpty(output)) return null;
 
                 // Belt-and-suspenders: isolate the (single-line, -Compress) JSON if any

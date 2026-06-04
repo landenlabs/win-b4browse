@@ -4,11 +4,16 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace BrowseSafe
 {
+    /// <summary>How a column exposes an interactive filter in the grid's filter bar.</summary>
+    public enum ColumnFilterKind { None, Dropdown, Regex }
+
     /// <summary>Declarative column for <see cref="SortableGrid"/>.</summary>
     public sealed class GridColumn
     {
@@ -21,6 +26,8 @@ namespace BrowseSafe
         public Func<object, string> Text = _ => "";           // cell display text
         public Func<object, IComparable>? Sort = null;        // sort key (defaults to Text)
         public Func<object, (Color Back, Color Fore)?>? Style = null; // per-cell colour
+        public ColumnFilterKind FilterKind = ColumnFilterKind.None;   // interactive filter, if any
+        public Func<object, string>? FilterValue = null;      // text tested by the filter (defaults to Text)
     }
 
     /// <summary>
@@ -54,7 +61,7 @@ namespace BrowseSafe
         private static Color HdrInfo => Theme.Subtle;
 
         private Panel? _topPanel;
-        private Label? _legend;
+        private Button? _help;
         private Panel? _headerPanel;
         private CheckGroup? _lastHeader;
         private List<object> _items = new();
@@ -62,6 +69,22 @@ namespace BrowseSafe
         private bool _asc;
         private bool _loading;
         private int _buttonColIndex = -1;
+
+        // ---- Per-column filter bar (optional) ---------------------------- //
+        private Panel? _filterBar;
+        private Label? _filterCount;                          // "showing N of M"
+        private readonly List<FilterControl> _filters = new();
+
+        /// <summary>One interactive filter wired to a column.</summary>
+        private sealed class FilterControl
+        {
+            public int ColIndex;
+            public ColumnFilterKind Kind;
+            public Func<object, string> Value = _ => "";       // text tested for this column
+            public ComboBox? Combo;                            // Dropdown
+            public TextBox? Box;                               // Regex
+            public Regex? Compiled;                            // cached valid pattern (Regex kind)
+        }
 
         public bool HasRun { get; private set; }
 
@@ -73,13 +96,13 @@ namespace BrowseSafe
             bool defaultAscending,
             Action<object>? onButtonClick = null,
             IEnumerable<(string Label, Action OnClick)>? extraButtons = null,
-            string? legend = null,
             Func<string>? summary = null,
             Func<CheckGroup>? headerInfo = null,
             Func<IReadOnlyList<object>, TabSeverity>? severity = null,
             Action<object>? onRowContext = null,
             (string Label, Func<object, bool> HideWhenOff)? showAllToggle = null,
-            (string Label, Action OnClick)? headerButton = null)
+            (string Label, Action OnClick)? headerButton = null,
+            HelpInfo? help = null)
         {
             _loader = loader;
             _cols = columns;
@@ -144,24 +167,15 @@ namespace BrowseSafe
             };
             top.Controls.Add(_status);
 
-            if (legend != null)
+            if (help != null)
             {
-                // Show a compact "Help" label and expose the full legend in a tooltip on hover.
-                _legend = new Label
-                {
-                    Text = "Help",
-                    AutoSize = false,
-                    AutoEllipsis = false,
-                    ForeColor = Theme.Subtle,
-                    TextAlign = ContentAlignment.MiddleRight,
-                    Cursor = Cursors.Help,
-                };
-                var tip = new ToolTip();
-                tip.SetToolTip(_legend, legend);
-                top.Controls.Add(_legend);
-                top.SizeChanged += (_, _) => LayoutLegend();
-                _status.SizeChanged += (_, _) => LayoutLegend();   // status width changes as its text changes
-                LayoutLegend();
+                // A real Help button, anchored to the right edge, opens a description dialog.
+                _help = HelpUi.CreateButton(help);
+                _help.Top = 7;
+                _help.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+                top.Controls.Add(_help);
+                top.SizeChanged += (_, _) => LayoutHelp();
+                LayoutHelp();
             }
 
             _grid = new DataGridView
@@ -261,6 +275,7 @@ namespace BrowseSafe
                 }
                 Controls.Add(headerPanel);
             }
+            BuildFilterBar();                  // docks below the toolbar (added before `top`)
             Controls.Add(top);
 
             Controls.Add(_busy);
@@ -300,6 +315,21 @@ namespace BrowseSafe
                 _header.ForeColor = Theme.Text;
             }
 
+            if (_filterBar != null)
+            {
+                _filterBar.BackColor = Theme.Toolbar;
+                foreach (Control c in _filterBar.Controls)
+                    if (c is Label) c.ForeColor = Theme.Subtle;
+                foreach (var fc in _filters)
+                {
+                    if (fc.Box == null) continue;
+                    fc.Box.ForeColor = Theme.Text;
+                    // Keep the error tint for an invalid pattern; otherwise reset to surface.
+                    fc.Box.BackColor = fc.Compiled == null && fc.Box.Text.Length > 0
+                        ? RegexErrorBack : Theme.Surface;
+                }
+            }
+
             if (_items.Count > 0) Populate();          // re-apply default cell colours
             if (_lastHeader != null) RenderHeader(_lastHeader);
         }
@@ -312,14 +342,11 @@ namespace BrowseSafe
 
         public void SetStatus(string text) => _status.Text = text;
 
-        /// <summary>Bounds the legend hint to the gap between the status label and the right
-        /// edge, so it can never paint over the toolbar buttons; long text ellipsizes.</summary>
-        private void LayoutLegend()
+        /// <summary>Keeps the Help button pinned to the right edge of the toolbar.</summary>
+        private void LayoutHelp()
         {
-            if (_legend == null || _topPanel == null) return;
-            int left = _status.Right + 12;                                   // always clears the buttons
-            int width = Math.Max(0, _topPanel.ClientSize.Width - 10 - left);
-            _legend.SetBounds(left, 0, width, _topPanel.ClientSize.Height);
+            if (_help == null || _topPanel == null) return;
+            _help.Left = Math.Max(0, _topPanel.ClientSize.Width - _help.Width - 8);
         }
 
         /// <summary>The currently loaded row objects (e.g. for an in-place enrich-then-refresh action).</summary>
@@ -356,6 +383,7 @@ namespace BrowseSafe
 
                 _lastHeader = headerGroup;
                 if (_header != null && headerGroup != null) RenderHeader(headerGroup);
+                RebuildFilterChoices();
                 SortItems();
                 Populate();
 
@@ -417,14 +445,207 @@ namespace BrowseSafe
             _header.ScrollToCaret();
         }
 
+        private const string AllChoice = "(All)";
+        private bool _suspendFilterEvents;
+
+        private static Color RegexErrorBack =>
+            Theme.IsDark ? Color.FromArgb(90, 50, 50) : Color.FromArgb(255, 224, 224);
+
+        /// <summary>Builds the optional filter bar (one control per column whose
+        /// <see cref="GridColumn.FilterKind"/> is not None). Added before the toolbar so it
+        /// docks directly beneath it; absent entirely when no column opts in.</summary>
+        private void BuildFilterBar()
+        {
+            var filterCols = new List<int>();
+            for (int i = 0; i < _cols.Length; i++)
+                if (_cols[i].FilterKind != ColumnFilterKind.None) filterCols.Add(i);
+            if (filterCols.Count == 0) return;
+
+            var bar = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Theme.Toolbar };
+            _filterBar = bar;
+
+            // Use one explicit font for every control and measure label widths with it, so
+            // positions never depend on AutoSize timing or an inherited default font (which
+            // previously rendered labels wider than measured and clipped the next control).
+            var ff = new Font("Segoe UI", 9f);
+            const int inputTop = 8, inputH = 24;
+
+            int x = 8;
+            foreach (int ci in filterCols)
+            {
+                var c = _cols[ci];
+                var fc = new FilterControl
+                {
+                    ColIndex = ci,
+                    Kind = c.FilterKind,
+                    Value = c.FilterValue ?? c.Text,
+                };
+
+                string labelText = c.Header + ":";
+                int lblW = TextRenderer.MeasureText(labelText, ff).Width;
+                var lbl = new Label
+                {
+                    Text = labelText, AutoSize = false, Font = ff,
+                    Left = x, Top = 0, Width = lblW + 2, Height = bar.Height,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    ForeColor = Theme.Subtle, BackColor = Color.Transparent,
+                };
+                bar.Controls.Add(lbl);
+                x = lbl.Right + 4;
+
+                if (c.FilterKind == ColumnFilterKind.Dropdown)
+                {
+                    var combo = new ComboBox
+                    {
+                        Left = x, Top = inputTop, Width = 160, Font = ff,
+                        DropDownStyle = ComboBoxStyle.DropDownList,
+                        FlatStyle = FlatStyle.System,
+                    };
+                    combo.Items.Add(AllChoice);
+                    combo.SelectedIndex = 0;
+                    combo.SelectedIndexChanged += (_, _) => { if (!_suspendFilterEvents) Populate(); };
+                    bar.Controls.Add(combo);
+                    fc.Combo = combo;
+                    x = combo.Right + 14;
+                }
+                else // Regex
+                {
+                    var box = new TextBox
+                    {
+                        Left = x, Top = inputTop, Width = 180, Height = inputH, Font = ff,
+                        PlaceholderText = "regex…",
+                        BackColor = Theme.Surface, ForeColor = Theme.Text,
+                    };
+                    box.TextChanged += (_, _) => { if (_suspendFilterEvents) return; CompileFilter(fc); Populate(); };
+                    bar.Controls.Add(box);
+                    fc.Box = box;
+                    x = box.Right + 14;
+                }
+                _filters.Add(fc);
+            }
+
+            _filterMinX = x;
+            _filterClear = new Button
+            {
+                Text = "Clear", Width = 64, Height = 26, Top = inputTop, Font = ff,
+                FlatStyle = FlatStyle.System,
+            };
+            _filterClear.Click += (_, _) => ClearFilters();
+            bar.Controls.Add(_filterClear);
+
+            _filterCount = new Label
+            {
+                AutoSize = true, Top = 12, Text = "", Font = ff,
+                ForeColor = Theme.Subtle, BackColor = Color.Transparent,
+            };
+            bar.Controls.Add(_filterCount);
+
+            bar.SizeChanged += (_, _) => LayoutFilterBar();
+            _filterCount.SizeChanged += (_, _) => LayoutFilterBar();
+            LayoutFilterBar();
+
+            Controls.Add(bar);
+        }
+
+        private int _filterMinX;
+        private Button? _filterClear;
+
+        /// <summary>Right-aligns the "showing N of M" label and Clear button.</summary>
+        private void LayoutFilterBar()
+        {
+            if (_filterBar == null || _filterClear == null || _filterCount == null) return;
+            _filterClear.Top = (_filterBar.ClientSize.Height - _filterClear.Height) / 2;
+            _filterClear.Left = Math.Max(_filterMinX, _filterBar.ClientSize.Width - _filterClear.Width - 8);
+            _filterCount.Top = (_filterBar.ClientSize.Height - _filterCount.Height) / 2;
+            _filterCount.Left = Math.Max(_filterMinX, _filterClear.Left - _filterCount.Width - 10);
+        }
+
+        /// <summary>Compiles a regex filter; on an invalid pattern caches null and tints the box,
+        /// and the filter falls back to a literal case-insensitive match.</summary>
+        private void CompileFilter(FilterControl fc)
+        {
+            if (fc.Box == null) return;
+            string p = fc.Box.Text;
+            if (string.IsNullOrEmpty(p)) { fc.Compiled = null; fc.Box.BackColor = Theme.Surface; return; }
+            try
+            {
+                fc.Compiled = new Regex(p, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+                fc.Box.BackColor = Theme.Surface;
+            }
+            catch { fc.Compiled = null; fc.Box.BackColor = RegexErrorBack; }
+        }
+
+        /// <summary>True when the item passes every active column filter (ANDed).</summary>
+        private bool PassesFilters(object item)
+        {
+            foreach (var fc in _filters)
+            {
+                if (fc.Kind == ColumnFilterKind.Dropdown)
+                {
+                    if (fc.Combo?.SelectedItem is string sel && sel != AllChoice
+                        && !string.Equals(fc.Value(item), sel, StringComparison.Ordinal))
+                        return false;
+                }
+                else // Regex
+                {
+                    string pat = fc.Box?.Text ?? "";
+                    if (pat.Length == 0) continue;
+                    string val = fc.Value(item) ?? "";
+                    bool ok = fc.Compiled != null
+                        ? fc.Compiled.IsMatch(val)
+                        : val.Contains(pat, StringComparison.OrdinalIgnoreCase);   // invalid pattern -> literal
+                    if (!ok) return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>Refreshes dropdown choices from the distinct values currently loaded,
+        /// preserving the selection when it still exists.</summary>
+        private void RebuildFilterChoices()
+        {
+            _suspendFilterEvents = true;
+            foreach (var fc in _filters)
+            {
+                if (fc.Combo == null) continue;
+                string? prev = fc.Combo.SelectedItem as string;
+                var vals = _items.Select(fc.Value).Where(s => !string.IsNullOrEmpty(s))
+                    .Distinct().OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
+                fc.Combo.BeginUpdate();
+                fc.Combo.Items.Clear();
+                fc.Combo.Items.Add(AllChoice);
+                foreach (var v in vals) fc.Combo.Items.Add(v);
+                int idx = prev != null ? fc.Combo.Items.IndexOf(prev) : 0;
+                fc.Combo.SelectedIndex = idx >= 0 ? idx : 0;
+                fc.Combo.EndUpdate();
+            }
+            _suspendFilterEvents = false;
+        }
+
+        private void ClearFilters()
+        {
+            _suspendFilterEvents = true;
+            foreach (var fc in _filters)
+            {
+                if (fc.Combo is { Items.Count: > 0 }) fc.Combo.SelectedIndex = 0;
+                if (fc.Box != null) { fc.Box.Text = ""; fc.Compiled = null; fc.Box.BackColor = Theme.Surface; }
+            }
+            _suspendFilterEvents = false;
+            Populate();
+        }
+
         private void Populate()
         {
             _grid.SuspendLayout();
             _grid.Rows.Clear();
             bool filtering = _toggle is { Checked: false } && _hideWhenOff != null;
+            int shown = 0, total = 0;
             foreach (var item in _items)
             {
                 if (filtering && _hideWhenOff!(item)) continue;
+                total++;
+                if (_filters.Count > 0 && !PassesFilters(item)) continue;
+                shown++;
                 var values = new object[_cols.Length];
                 for (int i = 0; i < _cols.Length; i++)
                     values[i] = _cols[i].Button ? _cols[i].ButtonText : _cols[i].Text(item);
@@ -447,6 +668,12 @@ namespace BrowseSafe
             }
             UpdateSortGlyphs();
             _grid.ResumeLayout();
+
+            if (_filterCount != null)
+            {
+                _filterCount.Text = shown == total ? $"{total} shown" : $"showing {shown} of {total}";
+                LayoutFilterBar();
+            }
         }
 
         private void OnHeaderClick(object? sender, DataGridViewCellMouseEventArgs e)

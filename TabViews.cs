@@ -52,7 +52,7 @@ namespace BrowseSafe
                 cols, defaultSortColumn: 2, defaultAscending: false,
                 onButtonClick: o => { var p = (InstalledProgram)o; ShowScanMenu(grid, p.Name, () => SafetyChecks.ResolveExeForScan(p)); },
                 extraButtons: new (string, Action)[] { ("Apps && features…", OpenAppsSettings) },
-                legend: "Recent <7d   Month <30d   Old >30d",
+                help: TabHelp.Installed,
                 onRowContext: o => ShowInstalledMenu(grid, (InstalledProgram)o),
                 severity: items => WorstDays(items, o => (o as InstalledProgram)?.DaysOld));
             return grid;
@@ -77,6 +77,15 @@ namespace BrowseSafe
             flow.Controls.Add(btnManage);
 
             panel.Controls.Add(flow);
+
+            var help = HelpUi.CreateButton(TabHelp.Firewall);
+            help.Top = 8;
+            help.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            panel.Controls.Add(help);
+            help.BringToFront();
+            void LayoutHelp() => help.Left = Math.Max(0, panel.ClientSize.Width - help.Width - 8);
+            panel.SizeChanged += (_, _) => LayoutHelp();
+            LayoutHelp();
 
             void Update()
             {
@@ -210,7 +219,7 @@ namespace BrowseSafe
             grid = new SortableGrid("Refresh",
                 () => GetPatches().Cast<object>().ToList(),
                 cols, defaultSortColumn: 2, defaultAscending: false,
-                legend: "Recent Windows updates (from WMI)",
+                help: TabHelp.Patches,
                 severity: items => TabSeverity.None);
             return grid;
         }
@@ -335,7 +344,23 @@ namespace BrowseSafe
 
             Theme.Changed += () => { if (browser.IsHandleCreated) browser.BeginInvoke(new Action(ApplyThemeToBrowser)); };
 
-            return browser;
+            // The WebBrowser is a native control with no toolbar of its own, so host it
+            // beneath a slim bar that carries the Help button (a floating overlay would be
+            // painted over by the native browser).
+            var host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
+            var bar = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Theme.Toolbar };
+            var help = HelpUi.CreateButton(TabHelp.Links);
+            help.Top = 7;
+            help.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            bar.Controls.Add(help);
+            void LayoutHelp() => help.Left = Math.Max(0, bar.ClientSize.Width - help.Width - 8);
+            bar.SizeChanged += (_, _) => LayoutHelp();
+            LayoutHelp();
+            Theme.Changed += () => { if (bar.IsHandleCreated) bar.BeginInvoke(new Action(() => bar.BackColor = Theme.Toolbar)); };
+
+            host.Controls.Add(browser);    // Fill first ...
+            host.Controls.Add(bar);        // ... then the Top bar (outermost added last)
+            return host;
         }
 
         // ---- Processes (same structure/behavior as Installed) ------------ //
@@ -366,7 +391,7 @@ namespace BrowseSafe
                 cols, defaultSortColumn: 2, defaultAscending: false,
                 onButtonClick: o => { var p = (ProcessItem)o; ShowScanMenu(grid, p.Name, () => ExistingPath(p.ExePath)); },
                 extraButtons: new (string, Action)[] { ("Task Manager", OpenTaskManager) },
-                legend: "Off: only unusual (non-Windows) processes with Old status.  Recent <7d  Month <30d  Old >30d",
+                help: TabHelp.Processes,
                 severity: items => WorstDays(items, o => (o as ProcessItem)?.DaysOld),
                 onRowContext: o => ShowProcessMenu(grid, (ProcessItem)o),
                 showAllToggle: ("Show all", o =>
@@ -441,7 +466,7 @@ namespace BrowseSafe
                     ("Scan all INFs", () => _ = ScanAllInfs(grid)),
                     ("Device Manager", OpenDeviceManager),
                 },
-                legend: "Status by local INF change:  Recent <7d   Month <30d   Old >30d.  Scan all INFs, or right-click a row to analyze its INF.",
+                help: TabHelp.Devices,
                 severity: items =>
                 {
                     var s = TabSeverity.None;
@@ -569,7 +594,7 @@ namespace BrowseSafe
             grid = new SortableGrid("Refresh",
                 () => SafetyChecks.GetChromeExtensions().Where(e => e.Enabled).Cast<object>().ToList(),
                 cols, defaultSortColumn: 2, defaultAscending: true,
-                legend: "Enabled extensions only.  MV2 = unsupported on Chrome 138+",
+                help: TabHelp.Chrome,
                 headerInfo: SafetyChecks.CheckChromeExe,
                 severity: items =>
                 {
@@ -618,7 +643,7 @@ namespace BrowseSafe
             grid = new SortableGrid("Refresh",
                 () => SafetyChecks.GetServices().Cast<object>().ToList(),
                 cols, defaultSortColumn: 1, defaultAscending: false,
-                legend: "Status by service .exe modify date.  Right-click a row for actions.",
+                help: TabHelp.Services,
                 severity: items => WorstDays(items, o => (o as ServiceInfo)?.DaysOld),
                 onRowContext: o => ShowServiceMenu(grid, (ServiceInfo)o),
                 showAllToggle: ("Show All", o =>
@@ -701,7 +726,7 @@ namespace BrowseSafe
                 () => SafetyChecks.GetStartup().Cast<object>().ToList(),
                 cols, defaultSortColumn: 0, defaultAscending: false,
                 onButtonClick: o => { var it = (StartupItem)o; ShowScanMenu(grid, it.Name, () => ExistingPath(it.ExePath)); },
-                legend: "Status by newest of added/modified.  Registry date = Run-key last change (shared).",
+                help: TabHelp.Startup,
                 severity: items => WorstDays(items, o => (o as StartupItem)?.DaysOld),
                 onRowContext: o => ShowStartupMenu(grid, (StartupItem)o));
             return grid;
@@ -792,18 +817,21 @@ namespace BrowseSafe
                     Sort = o => ((EventItem)o).TimeSort },
                 new GridColumn { Header = "Channel", Width = 150,
                     Text = o => SafetyChecks.ShortChannel(((EventItem)o).Channel),
-                    Sort = o => ((EventItem)o).Channel },
-                new GridColumn { Header = "Source", Width = 170, Text = o => ((EventItem)o).Source },
+                    Sort = o => ((EventItem)o).Channel,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Source", Width = 170, Text = o => ((EventItem)o).Source,
+                    FilterKind = ColumnFilterKind.Regex },
                 new GridColumn { Header = "Event", Width = 60,
                     Text = o => ((EventItem)o).EventId.ToString(),
                     Sort = o => ((EventItem)o).EventId },
-                new GridColumn { Header = "Message", Fill = 200, Text = o => ((EventItem)o).Message },
+                new GridColumn { Header = "Message", Fill = 200, Text = o => ((EventItem)o).Message,
+                    FilterKind = ColumnFilterKind.Regex },
             };
             grid = new SortableGrid("Refresh",
                 () => SafetyChecks.GetEventLogIssues().Cast<object>().ToList(),
                 cols, defaultSortColumn: 1, defaultAscending: false,
                 extraButtons: new (string, Action)[] { ("Event Viewer", OpenEventViewer) },
-                legend: "Critical/Error from System & Application plus security events (Defender, Firewall rule changes, new services, audit clears). Security log needs admin. Right-click a row for actions.",
+                help: TabHelp.Events,
                 severity: WorstEvents,
                 onRowContext: o => ShowEventMenu(grid, (EventItem)o));
             return grid;
@@ -930,6 +958,65 @@ namespace BrowseSafe
                 }
             }
             catch { try { MessageBox.Show(output, $"Event {e.EventId} details", MessageBoxButtons.OK, MessageBoxIcon.Information); } catch { } }
+        }
+
+        // ---- DNS: resolver cache ----------------------------------------- //
+        public static Control BuildDns()
+        {
+            var cols = new[]
+            {
+                new GridColumn { Header = "Status", Width = 80,
+                    Text = o => ((DnsCacheEntry)o).Suspicious ? "Review" : "OK",
+                    Sort = o => ((DnsCacheEntry)o).Suspicious ? 1 : 0,
+                    Style = o => ((DnsCacheEntry)o).Suspicious ? ((Color, Color)?)(YelBack, YelFore) : null },
+                new GridColumn { Header = "Type", Width = 64, Text = o => ((DnsCacheEntry)o).TypeText },
+                new GridColumn { Header = "TTL (s)", Width = 70,
+                    Text = o => ((DnsCacheEntry)o).Ttl.ToString(),
+                    Sort = o => ((DnsCacheEntry)o).Ttl },
+                new GridColumn { Header = "Name", Fill = 140, Text = o => ((DnsCacheEntry)o).Name },
+                new GridColumn { Header = "Data (answer)", Fill = 140, Text = o => ((DnsCacheEntry)o).Data },
+                new GridColumn { Header = "Queried", Fill = 110, Text = o => ((DnsCacheEntry)o).Entry },
+            };
+
+            SortableGrid grid = null!;
+            grid = new SortableGrid("Refresh",
+                () => SafetyChecks.GetDnsCache().Cast<object>().ToList(),
+                cols, defaultSortColumn: 0, defaultAscending: false,
+                extraButtons: new (string, Action)[] { ("Flush DNS cache", () => _ = FlushDnsAndReload(grid)) },
+                help: TabHelp.Dns,
+                severity: items =>
+                {
+                    var s = TabSeverity.None;
+                    foreach (var o in items)
+                        if (o is DnsCacheEntry e)
+                            s = Sev.Max(s, e.Suspicious ? TabSeverity.Caution : TabSeverity.Ok);
+                    return s;
+                },
+                onRowContext: o => ShowDnsMenu(grid, (DnsCacheEntry)o));
+            return grid;
+        }
+
+        private static async Task FlushDnsAndReload(SortableGrid grid)
+        {
+            grid.SetStatus("Flushing DNS resolver cache …");
+            bool ok = await Task.Run(SafetyChecks.FlushDnsCache);
+            await grid.RunAsync();   // reload the (now-empty) cache view
+            grid.SetStatus(ok ? "DNS resolver cache flushed." : "Could not flush the DNS cache.");
+        }
+
+        private static void ShowDnsMenu(Control owner, DnsCacheEntry e)
+        {
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Copy name", null, (_, _) => { try { Clipboard.SetText(e.Name); } catch { } });
+            menu.Items.Add("Copy answer", null, (_, _) => { try { Clipboard.SetText(e.Data); } catch { } })
+                .Enabled = e.Data.Length > 0;
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Search web for this host", null, (_, _) =>
+            {
+                string q = HttpUtility.UrlEncode(e.Name.Length > 0 ? e.Name : e.Entry);
+                OpenBrowser($"https://www.google.com/search?q={q}");
+            });
+            menu.Show(Cursor.Position);
         }
 
         // ---- Shared helpers ---------------------------------------------- //

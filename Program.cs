@@ -37,7 +37,7 @@ namespace BrowseSafe
             int run = Array.FindIndex(args, a => a.Equals("--run", StringComparison.OrdinalIgnoreCase));
             if (run >= 0)
             {
-                string scope = (run + 1 < args.Length && !args[run + 1].StartsWith("--")) ? args[run + 1] : "all";
+                string scope = (run + 1 < args.Length && !args[run + 1].StartsWith("-")) ? args[run + 1] : "all";
                 RunHeadless(scope, OutPath(args));
                 return;
             }
@@ -116,7 +116,12 @@ EXAMPLES:
 
         static string? OutPath(string[] args)
         {
-            int i = Array.FindIndex(args, a => a.Equals("--out", StringComparison.OrdinalIgnoreCase));
+            // Accept --out, and the -out / -o short forms (the single-dash forms are easy
+            // to type by mistake; treat them as the same flag rather than silently ignoring).
+            int i = Array.FindIndex(args, a =>
+                a.Equals("--out", StringComparison.OrdinalIgnoreCase) ||
+                a.Equals("-out", StringComparison.OrdinalIgnoreCase) ||
+                a.Equals("-o", StringComparison.OrdinalIgnoreCase));
             return (i >= 0 && i + 1 < args.Length) ? args[i + 1] : null;
         }
 
@@ -126,17 +131,36 @@ EXAMPLES:
 
             if (!Reports.IsValidScope(scope))
             {
-                Console.WriteLine($"Unknown scope '{scope}'. Valid scopes: {string.Join(", ", Reports.Scopes)}");
+                Console.Error.WriteLine($"Unknown scope '{scope}'. Valid scopes: {string.Join(", ", Reports.Scopes)}");
                 return;
             }
 
-            var (text, _) = Reports.Build(scope);
-            Console.WriteLine(text);
-
-            if (outPath != null)
+            try
             {
-                try { File.WriteAllText(outPath, text); Console.WriteLine($"(written to {outPath})"); }
-                catch (Exception ex) { Console.WriteLine($"(could not write {outPath}: {ex.Message})"); }
+                // Progress goes to stderr (one line as each section starts and finishes) so
+                // stdout stays a clean report - e.g. "SCAN (1 of 11) - started".
+                var (text, _) = Reports.Build(scope, (n, total, label, done) =>
+                    Console.Error.WriteLine($"{label} ({n} of {total}) - {(done ? "done" : "started")}"));
+
+                Console.WriteLine(text);
+                if (outPath != null) WriteOut(outPath, text);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine("Report failed: " + ex.Message);
+            }
+        }
+
+        static void WriteOut(string outPath, string text)
+        {
+            try
+            {
+                File.WriteAllText(outPath, text);
+                Console.Error.WriteLine($"(written to {Path.GetFullPath(outPath)})");
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"(could not write {outPath}: {ex.Message})");
             }
         }
     }

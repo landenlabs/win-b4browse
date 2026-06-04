@@ -23,6 +23,8 @@ namespace BrowseSafe
                 SafetyChecks.CheckEmailDns, SafetyChecks.CheckProxy, SafetyChecks.CheckTimeSync,
                 SafetyChecks.CheckWindowsSecurity,
             }),
+            ("dns",       "DNS Cache", new Func<CheckGroup>[] { SafetyChecks.CheckDnsCache }),
+            ("patches",   "Patches", new Func<CheckGroup>[] { SafetyChecks.CheckPatches }),
             ("chrome",    "Chrome", new Func<CheckGroup>[] { SafetyChecks.CheckChromeExe, SafetyChecks.CheckChromeExtensions }),
             ("services",  "Services", new Func<CheckGroup>[] { SafetyChecks.CheckServices }),
             ("processes", "Processes", new Func<CheckGroup>[] { SafetyChecks.CheckProcesses }),
@@ -30,6 +32,7 @@ namespace BrowseSafe
             ("installed", "Installed", new Func<CheckGroup>[] { SafetyChecks.CheckInstalled }),
             ("devices",   "Devices", new Func<CheckGroup>[] { SafetyChecks.CheckDevices }),
             ("events",    "Event Log", new Func<CheckGroup>[] { SafetyChecks.CheckEventLog }),
+            ("firewall",  "Firewall", new Func<CheckGroup>[] { SafetyChecks.CheckFirewall }),
         };
 
         public static IEnumerable<string> Scopes => Catalog.Select(c => c.Key).Append("all");
@@ -38,8 +41,16 @@ namespace BrowseSafe
             scope.Equals("all", StringComparison.OrdinalIgnoreCase) ||
             Catalog.Any(c => c.Key.Equals(scope, StringComparison.OrdinalIgnoreCase));
 
-        /// <summary>Runs the producers for a scope and formats a plain-text report.</summary>
-        public static (string Text, CheckStatus Overall) Build(string scope)
+        /// <summary>
+        /// Runs the producers for a scope and formats a plain-text report. When
+        /// <paramref name="progress"/> is supplied it fires once as each section
+        /// (scope) starts and once as it finishes - the headless runner uses this to
+        /// print progress to stderr. Arguments: (index 1-based, total sections,
+        /// UPPERCASE scope label, done?). Each individual check is isolated so one
+        /// failure becomes a [FAIL] line instead of aborting the whole report.
+        /// </summary>
+        public static (string Text, CheckStatus Overall) Build(
+            string scope, Action<int, int, string, bool>? progress = null)
         {
             var sections = scope.Equals("all", StringComparison.OrdinalIgnoreCase)
                 ? Catalog
@@ -49,14 +60,29 @@ namespace BrowseSafe
             sb.AppendLine($"Browse Safe report  -  scope: {scope}  -  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine(new string('=', 70));
 
+            int total = sections.Length;
+            int index = 0;
             CheckStatus overall = CheckStatus.Pass;
-            foreach (var (_, title, producers) in sections)
+            foreach (var (key, title, producers) in sections)
             {
+                index++;
+                string label = key.ToUpperInvariant();
+                progress?.Invoke(index, total, label, false);   // started
+
                 sb.AppendLine();
                 sb.AppendLine($"### {title} ###");
                 foreach (var produce in producers)
                 {
-                    var g = produce();
+                    CheckGroup g;
+                    try { g = produce(); }
+                    catch (Exception ex)
+                    {
+                        // Isolate a failing check: one exception must not abort the whole
+                        // report (notably --run all, which runs every producer).
+                        g = new CheckGroup($"{title} - check error");
+                        g.Add(CheckStatus.Fail, "Unhandled error", ex.Message);
+                    }
+
                     sb.AppendLine();
                     sb.AppendLine(g.Title);
                     sb.AppendLine(new string('-', 70));
@@ -75,6 +101,8 @@ namespace BrowseSafe
                     }
                     if (CheckGroup.Rank(g.Worst()) > CheckGroup.Rank(overall)) overall = g.Worst();
                 }
+
+                progress?.Invoke(index, total, label, true);    // done
             }
 
             sb.AppendLine();

@@ -8,6 +8,14 @@ on:
 jobs:
   publish-win:
     runs-on: windows-latest
+    # Code-signing secrets (optional). Add these in the repo Settings > Secrets:
+    #   CODE_SIGN_PFX_BASE64 - base64 of your code-signing .pfx  (certutil -encode / [Convert]::ToBase64String)
+    #   CODE_SIGN_PASSWORD   - the .pfx password
+    # When CODE_SIGN_PFX_BASE64 is empty the Sign step is skipped and the build ships unsigned.
+    env:
+      CODE_SIGN_PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+      CODE_SIGN_PASSWORD: ${{ secrets.CODE_SIGN_PASSWORD }}
+      TIMESTAMP_URL: http://timestamp.digicert.com
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +33,36 @@ jobs:
       - name: Publish (win-x64 self-contained single file)
         run: |
           dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:EnableCompressionInSingleFile=true -o ./artifacts/win-x64
+
+      # Signs the final single-file apphost AFTER publish (and before zipping) so the
+      # released exe carries the signature. Skipped automatically when no cert secret is set.
+      - name: Sign published exe
+        if: ${{ env.CODE_SIGN_PFX_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $exe = "./artifacts/win-x64/BrowseSafe.exe"
+
+          # Locate signtool from the Windows SDK on the runner (newest version, x64).
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw "signtool.exe not found on the runner." }
+
+          # Decode the .pfx from the secret to a temp file.
+          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64))
+
+          try {
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:CODE_SIGN_PASSWORD `
+              /tr $env:TIMESTAMP_URL /td SHA256 $exe
+            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed (exit $LASTEXITCODE)." }
+          }
+          finally {
+            Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+          }
+
+          $sig = Get-AuthenticodeSignature $exe
+          Write-Host "Signature status: $($sig.Status)  signer: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "Post-sign verification failed: $($sig.Status)" }
 
       - name: Package artifact as zip
         shell: pwsh

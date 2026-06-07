@@ -108,10 +108,32 @@ namespace BrowseSafe
                 string state = d.TryGetProperty("State", out var st) ? (st.GetString() ?? "") : "";
                 bool running = state.Equals("Running", StringComparison.OrdinalIgnoreCase);
                 string label = disp.Length > 0 ? $"{disp}  ({name})" : name;
-                group.Add(running ? CheckStatus.Warn : CheckStatus.Info,
-                    $"Capture driver: {label}",
-                    running ? $"Installed and RUNNING (State={state}) - sniffing is possible right now."
-                            : $"Installed (State={state})." );
+
+                // PktMon is a built-in Windows component (cannot be uninstalled). A loaded
+                // driver is NOT the same as an active capture, so don't over-alarm: report it
+                // as Info, with the CLI steps to confirm/stop a session and to disable the driver.
+                bool builtinPktMon = name.Contains("pktmon", StringComparison.OrdinalIgnoreCase);
+                if (builtinPktMon)
+                {
+                    // Built-in component: a loaded driver is not the same as an active capture,
+                    // and it is present by default on most Windows installs - report as Info so
+                    // it does not flag the whole scan, but explain how to verify / stop / disable.
+                    group.Add(CheckStatus.Info,
+                        $"Capture driver: {label}",
+                        $"Built-in Windows Packet Monitor (State={state}). " +
+                        "It only captures while a session is active - it is NOT removable (OS component). " +
+                        "Confirm with elevated 'pktmon status'; stop any capture with 'pktmon stop'. " +
+                        "To stop the driver loading: elevated 'sc.exe config PktMon start= disabled', then reboot.");
+                }
+                else
+                {
+                    group.Add(running ? CheckStatus.Warn : CheckStatus.Info,
+                        $"Capture driver: {label}",
+                        (running ? $"Installed and RUNNING (State={state}) - sniffing is possible right now. "
+                                 : $"Installed (State={state}). ") +
+                        "If unexpected, uninstall the owning tool (e.g. Npcap / Wireshark) from Settings > Apps, " +
+                        "or stop/disable its service.");
+                }
             }
             if (driverCount == 0)
                 group.Add(CheckStatus.Pass, "Packet-capture drivers",
@@ -127,6 +149,177 @@ namespace BrowseSafe
             }
 
             return group;
+        }
+
+        // ----------------------------------------------------------------- //
+        // 12. Network adapters (compact table)
+        // ----------------------------------------------------------------- //
+        private sealed class AdapterRowInfo
+        {
+            public string Name = "?";
+            public string State = "?";
+            public bool V4;
+            public bool V6;
+            public string Notes = "";
+        }
+
+        /// <summary>
+        /// Lists network adapters as a compact table: Adapter | Enabled | IPv4 | IPv6 | Notes.
+        /// IPv4 / IPv6 reflect the protocol binding on the adapter; Notes lists the
+        /// *non-standard* enabled bindings (packet-capture filters, Zscaler, VPN, virtual
+        /// switch, ...) - the routine standard items (TCP/IP, QoS, WFP native, MS networking)
+        /// are intentionally omitted. All rows are Info so the section never alters severity.
+        /// </summary>
+        public static CheckGroup CheckNetworkAdapters()
+        {
+            var group = new CheckGroup("12. Network Adapters");
+
+            var rows = new List<AdapterRowInfo>();
+            var root = QueryAdapters();
+            if (root != null)
+            {
+                IEnumerable<JsonElement> items = root.Value.ValueKind == JsonValueKind.Array
+                    ? root.Value.EnumerateArray()
+                    : new[] { root.Value };
+
+                foreach (var a in items)
+                {
+                    if (a.ValueKind != JsonValueKind.Object) continue;
+                    var notes = new List<string>();
+                    if (a.TryGetProperty("Notes", out var nt) && nt.ValueKind == JsonValueKind.Array)
+                        foreach (var e in nt.EnumerateArray())
+                            if (e.ValueKind == JsonValueKind.String)
+                            {
+                                string? v = e.GetString();
+                                if (!string.IsNullOrWhiteSpace(v)) notes.Add(v!);
+                            }
+
+                    rows.Add(new AdapterRowInfo
+                    {
+                        Name = a.TryGetProperty("Name", out var n) ? (n.GetString() ?? "?") : "?",
+                        State = ShortAdapterState(a.TryGetProperty("Status", out var s) ? (s.GetString() ?? "") : ""),
+                        V4 = a.TryGetProperty("IPv4", out var p4) && p4.ValueKind == JsonValueKind.True,
+                        V6 = a.TryGetProperty("IPv6", out var p6) && p6.ValueKind == JsonValueKind.True,
+                        Notes = string.Join(", ", notes),
+                    });
+                }
+            }
+
+            // Fallback: if the PowerShell binding probe is unavailable, enumerate in-process
+            // (no Notes, but still shows each adapter's state and IPv4/IPv6 support).
+            if (rows.Count == 0) AddAdaptersFallback(rows);
+
+            if (rows.Count == 0)
+            {
+                group.Add(CheckStatus.Info, "Network adapters", "No adapters enumerated.");
+                return group;
+            }
+
+            int up = rows.Count(r => r.State == "up");
+            group.Add(CheckStatus.Info, $"Network adapters: {rows.Count} ({up} up)",
+                "Enabled = adapter state; IPv4/IPv6 = protocol bound; Notes = non-standard bindings " +
+                "(capture/filter/VPN/virtual). QoS and WFP-native layers omitted.");
+
+            group.AddRow(CheckStatus.Info, AdapterRow("Adapter", "Enabled", "IPv4", "IPv6", "Notes"));
+            group.AddRow(CheckStatus.Info, AdapterRow(new string('-', 24), "-------", "----", "----", "------------"));
+            foreach (var r in rows
+                .OrderByDescending(r => r.State == "up")
+                .ThenBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                group.AddRow(CheckStatus.Info,
+                    AdapterRow(r.Name, r.State, r.V4 ? "on" : "off", r.V6 ? "on" : "off", r.Notes));
+            }
+
+            return group;
+        }
+
+        /// <summary>Fixed-width row for the adapter table; Notes (last) is left unbounded.</summary>
+        private static string AdapterRow(string adapter, string enabled, string v4, string v6, string notes)
+            => $"  {Trunc(adapter, 24),-24} {Trunc(enabled, 8),-8} {Trunc(v4, 4),-4} {Trunc(v6, 4),-4} {notes}";
+
+        private static string ShortAdapterState(string status) => status.Trim().ToLowerInvariant() switch
+        {
+            "up" => "up",
+            "disconnected" => "down",
+            "disabled" => "disabled",
+            "not present" => "absent",
+            "" => "?",
+            var other => other,
+        };
+
+        private static void AddAdaptersFallback(List<AdapterRowInfo> rows)
+        {
+            try
+            {
+                foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback) continue;
+                    bool v4 = false, v6 = false;
+                    try { v4 = nic.Supports(NetworkInterfaceComponent.IPv4); } catch { }
+                    try { v6 = nic.Supports(NetworkInterfaceComponent.IPv6); } catch { }
+                    rows.Add(new AdapterRowInfo
+                    {
+                        Name = nic.Name,
+                        State = nic.OperationalStatus == OperationalStatus.Up ? "up" : "down",
+                        V4 = v4,
+                        V6 = v6,
+                        Notes = "",
+                    });
+                }
+            }
+            catch { /* leave rows empty -> caller reports "No adapters enumerated." */ }
+        }
+
+        /// <summary>
+        /// PowerShell probe returning one object per (visible) adapter:
+        /// { Name, Desc, Status, IPv4, IPv6, Notes[] }. IPv4/IPv6 come from the ms_tcpip /
+        /// ms_tcpip6 bindings; Notes are the other ENABLED bindings minus a skip-list of
+        /// routine standard components (TCP/IP, QoS, WFP-native, MS file/printer/client,
+        /// topology). Best-effort; returns null if Get-NetAdapter* is unavailable.
+        /// </summary>
+        private static JsonElement? QueryAdapters()
+        {
+            const string script = @"
+$ErrorActionPreference='SilentlyContinue'
+# Routine components to omit from Notes (by ComponentID). ms_ndiscap (packet capture) is
+# deliberately NOT skipped so capture plumbing shows up.
+$skip = @('ms_tcpip','ms_tcpip6','ms_pacer','ms_wfplwf_native','ms_wfplwf_upper',
+          'ms_server','ms_msclient','ms_netbt','ms_lldp','ms_rspndr','ms_lltdio','ms_implat')
+
+$bind=@{}
+try {
+  foreach($b in (Get-NetAdapterBinding -AllBindings)){
+    $k=[string]$b.Name
+    if(-not $bind.ContainsKey($k)){ $bind[$k]=New-Object System.Collections.ArrayList }
+    [void]$bind[$k].Add(@{ id=[string]$b.ComponentID; disp=[string]$b.DisplayName; en=[bool]$b.Enabled })
+  }
+} catch {}
+
+$out=@()
+try {
+  foreach($a in (Get-NetAdapter)){
+    $name=[string]$a.Name
+    $ip4=$false; $ip6=$false; $notes=@()
+    if($bind.ContainsKey($name)){
+      foreach($c in $bind[$name]){
+        if($c.id -eq 'ms_tcpip'){ $ip4=$c.en; continue }
+        if($c.id -eq 'ms_tcpip6'){ $ip6=$c.en; continue }
+        if($c.en -and ($skip -notcontains $c.id)){ $notes += $c.disp }
+      }
+    }
+    $out += [ordered]@{
+      Name=$name
+      Desc=[string]$a.InterfaceDescription
+      Status=[string]$a.Status
+      IPv4=[bool]$ip4
+      IPv6=[bool]$ip6
+      Notes=@($notes)
+    }
+  }
+} catch {}
+$out | ConvertTo-Json -Compress -Depth 5
+";
+            return RunPowerShellJson(script);
         }
 
         /// <summary>
@@ -408,7 +601,9 @@ $r | ConvertTo-Json -Compress -Depth 5
                 "Cloudflare 1.1.1.1, Quad9 9.9.9.9, Google 8.8.8.8  (queried in parallel).");
             group.Add(CheckStatus.Info, "How to read",
                 "Cells show how each resolver's answer compares to Local: identical / /24 / /16 / no match / fail. " +
-                "Valid = PASS when Local matches at least one reference resolver.");
+                "Valid = PASS when Local matches a reference; cdn = references disagree among themselves (CDN); " +
+                "geo = references agree but Local is a different, still-public edge (normal behind a CDN or corporate " +
+                "proxy); FAIL = Local returned a private/bogon address for a public site.");
 
             BuildComparisonTable(group, byServer, AddressFamily.InterNetwork,
                 "IPv4 (A records  -  prefix tiers /24, /16)", 24, 16);
@@ -446,6 +641,7 @@ $r | ConvertTo-Json -Compress -Depth 5
                 List<IPAddress> local = LocalLookup(domain, family);
 
                 var cells = new string[3];
+                var refLists = new List<IPAddress>[3];
                 int matched = 0, refFails = 0;
                 for (int i = 0; i < ReferenceResolvers.Length; i++)
                 {
@@ -453,6 +649,7 @@ $r | ConvertTo-Json -Compress -Depth 5
                     List<IPAddress> refIps = data.TryGetValue(domain, out var v)
                         ? (family == AddressFamily.InterNetwork ? v.A : v.Aaaa)
                         : new List<IPAddress>();
+                    refLists[i] = refIps;
 
                     (string text, int rank) = MatchTier(local, refIps, bits1, bits2, tier1, tier2);
                     cells[i] = text;
@@ -460,12 +657,21 @@ $r | ConvertTo-Json -Compress -Depth 5
                     if (refIps.Count == 0) refFails++;
                 }
 
+                // Do the reference resolvers even agree with EACH OTHER? A CDN / anycast host
+                // (e.g. www.microsoft.com on Akamai / Azure Front Door) is steered to a
+                // different network per resolver, so they don't - and a Local mismatch is then
+                // expected, not a hijack. A genuine hijack shows the references agreeing while
+                // Local is the odd one out. So only FAIL when the references agree.
+                bool refsAgree = ReferencesAgree(refLists, bits2);
+
                 CheckStatus status;
                 string valid;
                 if (local.Count == 0) { status = CheckStatus.Info; valid = "n/a"; }
                 else if (refFails == 3) { status = CheckStatus.Warn; valid = "WARN"; }
                 else if (matched >= 1) { status = CheckStatus.Pass; valid = "PASS"; }
-                else { status = CheckStatus.Fail; valid = "FAIL"; }
+                else if (LocalHasNonPublic(local)) { status = CheckStatus.Fail; valid = "FAIL"; }   // private/bogon = captive portal / pharming
+                else if (!refsAgree) { status = CheckStatus.Info; valid = "cdn"; }                   // references disagree -> CDN
+                else { status = CheckStatus.Info; valid = "geo"; }                                   // references agree, Local is a different public edge (CDN / corporate proxy)
 
                 string localCell = local.Count == 0 ? "none" : $"{local.Count} ip";
                 group.AddRow(status, Row(valid, domain, localCell, cells[0], cells[1], cells[2]));
@@ -484,10 +690,40 @@ $r | ConvertTo-Json -Compress -Depth 5
                     group.Add(CheckStatus.Warn, $"{fam} reference resolvers unreachable",
                         $"{string.Join(", ", unreachable)} - public DNS (port 53) may be blocked on this network.");
                 if (failed.Count > 0)
-                    group.Add(CheckStatus.Warn, $"{fam} domains matched no reference resolver",
-                        $"{string.Join(", ", failed)} - usually geo-distributed CDNs (e.g. Yahoo), " +
-                        "occasionally local DNS tampering. Review those rows.");
+                    group.Add(CheckStatus.Warn, $"{fam} public site resolved to a non-public address",
+                        $"{string.Join(", ", failed)} - your Local resolver returned a private / loopback IP for a " +
+                        "public site (captive portal, or DNS pharming). CDN / geo / corporate-proxy differences are " +
+                        "excluded, so review these.");
             }
+        }
+
+        /// <summary>True if any Local answer is a loopback or private/bogon address - the real
+        /// red flag for a public hostname (captive portal or DNS pharming), versus benign CDN
+        /// or corporate-proxy steering where every answer is still a public address.</summary>
+        private static bool LocalHasNonPublic(List<IPAddress> local)
+        {
+            foreach (var a in local)
+                if (IPAddress.IsLoopback(a) || IsPrivate(a)) return true;
+            return false;
+        }
+
+        /// <summary>True if at least two reference resolvers' answer sets share a network prefix
+        /// - i.e. they agree on where the host lives. When they don't, the host is CDN/anycast
+        /// distributed and a Local divergence is expected rather than suspicious.</summary>
+        private static bool ReferencesAgree(IReadOnlyList<List<IPAddress>> refLists, int bits)
+        {
+            for (int i = 0; i < refLists.Count; i++)
+            {
+                if (refLists[i] is not { Count: > 0 }) continue;
+                for (int j = i + 1; j < refLists.Count; j++)
+                {
+                    if (refLists[j] is not { Count: > 0 }) continue;
+                    foreach (var a in refLists[i])
+                        foreach (var b in refLists[j])
+                            if (SamePrefix(a, b, bits)) return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>Best match level between the local answer set and one resolver's set.</summary>

@@ -46,6 +46,8 @@ namespace BrowseSafe
         private readonly Action<object>? _onButton;
         private readonly Func<CheckGroup>? _headerInfo;
         private readonly RichTextBox? _header;
+        // Clickable inline links in the header pane: char range -> URI to open.
+        private readonly List<(int Start, int End, string Uri)> _headerLinks = new();
         private readonly BusyOverlay _busy = new();
         private readonly Func<IReadOnlyList<object>, TabSeverity>? _severityEval;
         private readonly Action<object>? _onRowContext;
@@ -193,15 +195,20 @@ namespace BrowseSafe
                 AutoGenerateColumns = false,
                 BackgroundColor = Theme.Surface,
                 BorderStyle = BorderStyle.None,
-                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing,
+                // Header and rows auto-size to the (scalable) cell font so the [ - 100% + ]
+                // control grows the whole content area, not just the glyphs.
+                ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+                AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCells,
                 EnableHeadersVisualStyles = false,
                 GridColor = Theme.GridLine,
-                Font = new Font("Segoe UI", 9f),
+                Font = Theme.Scaled("Segoe UI", 9f),
             };
+            _grid.DefaultCellStyle.Font = Theme.Scaled("Segoe UI", 9f);
             _grid.DefaultCellStyle.BackColor = Theme.Surface;
             _grid.DefaultCellStyle.ForeColor = Theme.Text;
             _grid.DefaultCellStyle.SelectionBackColor = Theme.IsDark ? Color.FromArgb(70, 80, 100) : Color.FromArgb(200, 220, 245);
             _grid.DefaultCellStyle.SelectionForeColor = Theme.Text;
+            _grid.ColumnHeadersDefaultCellStyle.Font = Theme.Scaled("Segoe UI", 9f);
             _grid.ColumnHeadersDefaultCellStyle.BackColor = Theme.Toolbar;
             _grid.ColumnHeadersDefaultCellStyle.ForeColor = Theme.Text;
 
@@ -254,12 +261,14 @@ namespace BrowseSafe
                     Dock = DockStyle.Fill,
                     ReadOnly = true,
                     BorderStyle = BorderStyle.None,
-                    Font = new Font("Consolas", 9f),
+                    Font = Theme.Scaled("Consolas", 9f),
                     BackColor = Theme.Surface,
                     ForeColor = Theme.Text,
                     WordWrap = false,
                     ScrollBars = RichTextBoxScrollBars.Vertical,
                 };
+                _header.MouseDown += HeaderMouseDown;
+                _header.MouseMove += HeaderMouseMove;
                 var headerPanel = _headerPanel;
                 headerPanel.Controls.Add(_header);
                 if (headerButton is { } hb)
@@ -284,13 +293,33 @@ namespace BrowseSafe
             Resize += (_, _) => CenterBusy();
 
             Theme.Changed += OnThemeChanged;
-            Disposed += (_, _) => Theme.Changed -= OnThemeChanged;
+            Theme.ScaleChanged += OnScaleChanged;
+            Disposed += (_, _) => { Theme.Changed -= OnThemeChanged; Theme.ScaleChanged -= OnScaleChanged; };
         }
 
         private void OnThemeChanged()
         {
             if (!IsHandleCreated) { ApplyTheme(); return; }
             BeginInvoke(new Action(ApplyTheme));
+        }
+
+        private void OnScaleChanged()
+        {
+            if (!IsHandleCreated) { ApplyScale(); return; }
+            BeginInvoke(new Action(ApplyScale));
+        }
+
+        private void ApplyScale()
+        {
+            var cellFont = Theme.Scaled("Segoe UI", 9f);
+            _grid.Font = cellFont;
+            _grid.DefaultCellStyle.Font = cellFont;
+            _grid.ColumnHeadersDefaultCellStyle.Font = cellFont;
+            if (_header != null) _header.Font = Theme.Scaled("Consolas", 9f);
+
+            if (_items.Count > 0) Populate();           // re-lay rows at the new size
+            if (_lastHeader != null) RenderHeader(_lastHeader);
+            _grid.AutoResizeRows();                      // pick up the new cell-font height
         }
 
         private void ApplyTheme()
@@ -412,12 +441,13 @@ namespace BrowseSafe
         {
             if (_header == null) return;
             _header.Clear();
+            _headerLinks.Clear();
 
             void Append(string text, Color color, FontStyle style = FontStyle.Regular, float size = 9f)
             {
                 _header.SelectionStart = _header.TextLength;
                 _header.SelectionColor = color;
-                _header.SelectionFont = new Font("Consolas", size, style);
+                _header.SelectionFont = Theme.Scaled("Consolas", size, style);
                 _header.AppendText(text);
             }
 
@@ -440,11 +470,92 @@ namespace BrowseSafe
                 };
                 Append(tag, c, FontStyle.Bold);
                 Append(r.Name, Theme.Text, FontStyle.Bold);
+
+                // Inline clickable link (e.g. "[ open settings ]") placed before the detail so
+                // it stays visible even when the detail text is long (header has no h-scroll).
+                if (!string.IsNullOrEmpty(r.LinkUri) && !string.IsNullOrEmpty(r.LinkLabel))
+                {
+                    Append("  ", HdrInfo);
+                    int start = _header.TextLength;
+                    Append(r.LinkLabel!, Theme.Link, FontStyle.Underline);
+                    _headerLinks.Add((start, _header.TextLength, r.LinkUri!));
+                }
+
                 if (!string.IsNullOrEmpty(r.Detail)) Append("  -  " + r.Detail, HdrInfo);
                 Append("\n", Theme.Text);
             }
             _header.SelectionStart = 0;
             _header.ScrollToCaret();
+        }
+
+        // ---- Header inline links ---------------------------------------- //
+        private string? HeaderLinkAt(Point p)
+        {
+            if (_header == null) return null;
+            foreach (var (start, end, uri) in _headerLinks)
+            {
+                if (start < 0 || end <= start) continue;
+                Point a = _header.GetPositionFromCharIndex(start);
+                Point b = _header.GetPositionFromCharIndex(end);
+                if (b.Y < a.Y) continue;
+                int h = (int)Math.Ceiling(_header.Font.GetHeight()) + 4;
+                var rect = new Rectangle(a.X, a.Y, Math.Max(1, b.X - a.X), h);
+                if (rect.Contains(p)) return uri;
+            }
+            return null;
+        }
+
+        private void HeaderMouseDown(object? sender, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            string? uri = HeaderLinkAt(e.Location);
+            if (uri != null) OpenSettingUri(uri, e.Location);
+        }
+
+        private readonly ToolTip _linkTip = new();
+
+        private void HeaderMouseMove(object? sender, MouseEventArgs e)
+        {
+            if (_header == null) return;
+            _header.Cursor = HeaderLinkAt(e.Location) != null ? Cursors.Hand : Cursors.IBeam;
+        }
+
+        /// <summary>
+        /// Opens a settings link. Non-Chrome URIs (ms-settings:, windowsdefender:, *.msc, ...)
+        /// open directly via the shell. A chrome:// URL can't be navigated to reliably from the
+        /// command line when Chrome is already running with multiple profiles (the profile
+        /// picker drops the argument), so we also copy the URL to the clipboard and tell the
+        /// user to paste it into the address bar - which always works.
+        /// </summary>
+        private void OpenSettingUri(string uri, Point at)
+        {
+            bool isChrome = uri.StartsWith("chrome://", StringComparison.OrdinalIgnoreCase);
+            if (isChrome)
+                try { Clipboard.SetText(uri); } catch { /* clipboard may be busy */ }
+
+            try
+            {
+                var psi = isChrome
+                    ? new ProcessStartInfo("chrome.exe", uri)   // navigates on single-profile setups
+                    : new ProcessStartInfo(uri);
+                psi.UseShellExecute = true;
+                Process.Start(psi);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Could not open '{uri}': {ex.Message}", "Browse Safe",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (isChrome)
+            {
+                SetStatus($"Copied {uri}  -  press Ctrl+V in Chrome's address bar to open it.");
+                if (_header != null)
+                    try { _linkTip.Show($"Copied to clipboard - paste (Ctrl+V) into\nChrome's address bar:\n{uri}",
+                                        _header, at.X, at.Y + 18, 3500); }
+                    catch { /* tooltip is best-effort */ }
+            }
         }
 
         private const string AllChoice = "(All)";

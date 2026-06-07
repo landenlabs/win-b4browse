@@ -2,6 +2,7 @@
 
 using System;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Windows.Forms;
 
@@ -22,6 +23,37 @@ namespace BrowseSafe
         public static event Action? Changed;
 
         public static bool IsDark => Current == Mode.Dark;
+
+        // Content font scaling ---------------------------------------------- //
+        // Driven by the status-bar [ - 100% + ] control; views multiply their base
+        // point sizes by FontScale and re-render when ScaleChanged fires.
+        public const float MinScale = 0.7f;     // 70%
+        public const float MaxScale = 2.0f;     // 200%
+        public const float ScaleStep = 0.1f;    // 10% per nudge
+
+        /// <summary>Current content font scale (1.0 = 100%).</summary>
+        public static float FontScale { get; private set; } = 1.0f;
+
+        /// <summary>Raised after the content font scale changes so views can re-apply fonts.</summary>
+        public static event Action? ScaleChanged;
+
+        /// <summary>A font in <paramref name="family"/> sized by <paramref name="size"/> times the current scale.</summary>
+        public static Font Scaled(string family, float size, FontStyle style = FontStyle.Regular)
+            => new Font(family, size * FontScale, style);
+
+        /// <summary>Sets the content font scale (clamped), notifies views, and persists the choice.</summary>
+        public static void SetScale(float scale)
+        {
+            scale = Math.Clamp(scale, MinScale, MaxScale);
+            if (Math.Abs(scale - FontScale) < 0.001f) return;
+            FontScale = scale;
+            ScaleChanged?.Invoke();
+            SaveScale();
+        }
+
+        /// <summary>Nudges the scale by one step (direction +1 = larger, -1 = smaller).</summary>
+        public static void StepScale(int direction)
+            => SetScale((float)Math.Round(FontScale + direction * ScaleStep, 2));
 
         // Palette ---------------------------------------------------------- //
         public static Color Window  => IsDark ? Color.FromArgb(32, 32, 34)   : Color.White;
@@ -66,6 +98,10 @@ namespace BrowseSafe
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "BrowseSafe", "theme.txt");
 
+        private static string ScaleFilePath => Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "BrowseSafe", "scale.txt");
+
         public static void Load()
         {
             try
@@ -75,6 +111,25 @@ namespace BrowseSafe
                     Current = Mode.Dark;
             }
             catch { /* default light */ }
+
+            try
+            {
+                if (File.Exists(ScaleFilePath) &&
+                    float.TryParse(File.ReadAllText(ScaleFilePath).Trim(),
+                        NumberStyles.Float, CultureInfo.InvariantCulture, out var s))
+                    FontScale = Math.Clamp(s, MinScale, MaxScale);
+            }
+            catch { /* default 100% */ }
+        }
+
+        private static void SaveScale()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(ScaleFilePath)!);
+                File.WriteAllText(ScaleFilePath, FontScale.ToString(CultureInfo.InvariantCulture));
+            }
+            catch { /* non-fatal */ }
         }
 
         private static void Save()

@@ -14,6 +14,11 @@ namespace BrowseSafe
         public string Location = "";      // e.g. "HKCU\Run", "Startup (user)"
         public string Source = "";        // Registry / Folder
 
+        /// <summary>Whether the entry is enabled (false = disabled in Task Manager / Settings,
+        /// tracked in the Explorer\StartupApproved registry keys). Defaults to enabled.</summary>
+        public bool Enabled = true;
+        public string EnabledText = "Enabled";
+
         /// <summary>When the entry was added/changed: registry key last-write, or shortcut file time.</summary>
         public DateTime? RegistryAdded;
         public string RegistryAddedText = "—";

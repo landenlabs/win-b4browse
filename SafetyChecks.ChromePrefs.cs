@@ -122,6 +122,10 @@ namespace BrowseSafe
         }
 
         // ---- Shared line builder (header panel + report) ---------------------------------- //
+        // Inline link label shown after a setting line in the Chrome tab header; clicking it
+        // opens the relevant chrome://settings page (GUI only - ignored by text reports).
+        private const string SettingsLink = "[ open settings ]";
+
         private static void AddChromePrivacy(CheckGroup g)
         {
             var profiles = GetChromePrivacy();
@@ -137,28 +141,35 @@ namespace BrowseSafe
             int sbOff = profiles.Count(p => p.SafeBrowsing == false);
             int sbEnh = profiles.Count(p => p.SafeBrowsingEnhanced == true);
             if (sbOff > 0)
-                g.Add(CheckStatus.Fail, "Safe Browsing", $"OFF in {sbOff} of {n} profile(s) - no phishing/malware blocking.");
+                g.Add(CheckStatus.Fail, "Safe Browsing", $"OFF in {sbOff} of {n} profile(s) - no phishing/malware blocking.")
+                    .WithLink(SettingsLink, "chrome://settings/security");
             else
                 g.Add(CheckStatus.Pass, "Safe Browsing",
-                    sbEnh > 0 ? $"On (Enhanced in {sbEnh} of {n}).{scope}" : $"On (Standard).{scope}");
+                    sbEnh > 0 ? $"On (Enhanced in {sbEnh} of {n}).{scope}" : $"On (Standard).{scope}")
+                    .WithLink(SettingsLink, "chrome://settings/security");
 
             // Third-party cookies: 0 = allow all (tracking).
             int allow = profiles.Count(p => p.CookieControls == 0);
             int block = profiles.Count(p => p.CookieControls == 2);
             int incog = profiles.Count(p => p.CookieControls == 1);
             if (allow > 0)
-                g.Add(CheckStatus.Warn, "Third-party cookies", $"Allowed (not blocked) in {allow} of {n} profile(s) - cross-site tracking.");
+                g.Add(CheckStatus.Warn, "Third-party cookies", $"Allowed (not blocked) in {allow} of {n} profile(s) - cross-site tracking.")
+                    .WithLink(SettingsLink, "chrome://settings/cookies");
             else if (block > 0)
-                g.Add(CheckStatus.Pass, "Third-party cookies", $"Blocked.{scope}");
+                g.Add(CheckStatus.Pass, "Third-party cookies", $"Blocked.{scope}")
+                    .WithLink(SettingsLink, "chrome://settings/cookies");
             else if (incog > 0)
-                g.Add(CheckStatus.Pass, "Third-party cookies", $"Blocked in Incognito.{scope}");
+                g.Add(CheckStatus.Pass, "Third-party cookies", $"Blocked in Incognito.{scope}")
+                    .WithLink(SettingsLink, "chrome://settings/cookies");
             else
-                g.Add(CheckStatus.Info, "Third-party cookies", "Browser default (not explicitly set).");
+                g.Add(CheckStatus.Info, "Third-party cookies", "Browser default (not explicitly set).")
+                    .WithLink(SettingsLink, "chrome://settings/cookies");
 
             // Clear cookies on exit: 4 = clear; hygiene preference, never a hard fail.
             int clear = profiles.Count(p => p.CookiesContent == 4);
             g.Add(clear > 0 ? CheckStatus.Pass : CheckStatus.Info, "Cookies on exit",
-                clear > 0 ? $"Cleared on exit in {clear} of {n} profile(s)." : "Kept after exit (browser default).");
+                clear > 0 ? $"Cleared on exit in {clear} of {n} profile(s)." : "Kept after exit (browser default).")
+                .WithLink(SettingsLink, "chrome://settings/cookies");
 
             // Enterprise policy enforcement.
             var pol = ChromePolicy();
@@ -168,11 +179,13 @@ namespace BrowseSafe
                 if (pol.Block3p) parts.Add("block 3p-cookies");
                 if (pol.SbLevel is int lvl) parts.Add($"SafeBrowsing={(lvl == 2 ? "Enhanced" : lvl == 1 ? "Standard" : "Off")}");
                 if (pol.ClearOnExit) parts.Add("clear-on-exit");
-                g.Add(CheckStatus.Pass, "Enterprise policy", "Enforced: " + string.Join(", ", parts) + ".");
+                g.Add(CheckStatus.Pass, "Enterprise policy", "Enforced: " + string.Join(", ", parts) + ".")
+                    .WithLink("[ view policies ]", "chrome://policy");
             }
             else
             {
-                g.Add(CheckStatus.Info, "Enterprise policy", "Not enforced - settings are user-changeable (no hardening policy set).");
+                g.Add(CheckStatus.Info, "Enterprise policy", "Not enforced - settings are user-changeable (no hardening policy set).")
+                    .WithLink("[ view policies ]", "chrome://policy");
             }
         }
 

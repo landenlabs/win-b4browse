@@ -21,7 +21,8 @@ namespace BrowseSafe
                 SafetyChecks.CheckDnsServers, SafetyChecks.CheckRouter, SafetyChecks.CheckUpstreamResolver,
                 SafetyChecks.CheckDnsLookups, SafetyChecks.CheckCrossResolver, SafetyChecks.CheckHostsFile,
                 SafetyChecks.CheckEmailDns, SafetyChecks.CheckProxy, SafetyChecks.CheckTimeSync,
-                SafetyChecks.CheckWindowsSecurity,
+                SafetyChecks.CheckWindowsSecurity, SafetyChecks.CheckPromiscuousMode,
+                SafetyChecks.CheckNetworkAdapters,
             }),
             ("dns",       "DNS Cache", new Func<CheckGroup>[] { SafetyChecks.CheckDnsCache }),
             ("arp",       "ARP Cache", new Func<CheckGroup>[] { SafetyChecks.CheckArp }),
@@ -34,6 +35,8 @@ namespace BrowseSafe
             ("devices",   "Devices", new Func<CheckGroup>[] { SafetyChecks.CheckDevices }),
             ("winext",    "Shell Extensions", new Func<CheckGroup>[] { SafetyChecks.CheckWinExt }),
             ("events",    "Event Log", new Func<CheckGroup>[] { SafetyChecks.CheckEventLog }),
+            ("awake",     "Awake Periods", new Func<CheckGroup>[] { SafetyChecks.CheckAwake }),
+            ("rootca",    "Root CAs", new Func<CheckGroup>[] { SafetyChecks.CheckRootCAs }),
             ("firewall",  "Firewall", new Func<CheckGroup>[] { SafetyChecks.CheckFirewall, SafetyChecks.CheckFirewallRules }),
             ("restores",  "Restore Points", new Func<CheckGroup>[] { SafetyChecks.CheckRestore }),
         };

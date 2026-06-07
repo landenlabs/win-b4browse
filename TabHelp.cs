@@ -115,12 +115,20 @@ namespace BrowseSafe
             "Weak settings (Safe Browsing off, or third-party cookies allowed) also colour the Chrome " +
             "tab so the risk is visible at a glance.\n" +
             "\n" +
+            "Each audit line has an inline link (e.g. [ open settings ]) to the matching chrome:// page. " +
+            "Chrome can't always be steered to a chrome:// page from outside when it is already running " +
+            "with multiple profiles, so the link also copies that URL to the clipboard - just press Ctrl+V " +
+            "in Chrome's address bar to jump there.\n" +
+            "\n" +
             "# Status\n" +
             "- Unsupported - a Manifest V2 (MV2) extension, which Chrome 138+ no longer supports.\n" +
             "- The Modified column is also tinted by recency.\n" +
             "\n" + Recency +
             "\n" +
             "# Special actions\n" +
+            "- Remove unsupported - after confirmation, deletes the folders of all Manifest V2 " +
+            "(Unsupported) extensions. It first backs up ALL extensions to " +
+            "Downloads\\bsafe-extension-backup.zip; close Chrome first for a clean removal.\n" +
             "- Scan (header) - verify chrome.exe's signature or look it up on VirusTotal.\n" +
             "- Right-click a row to open the extension's folder or copy its path.\n" +
             "\n" + Common);
@@ -143,8 +151,8 @@ namespace BrowseSafe
             "\n" + Recency +
             "\n" +
             "# Special actions\n" +
-            "- All - off by default to surface only the items worth a look: non-Windows executables with " +
-            "an Old status. Turn it on to list every process.\n" +
+            "- All - off by default to surface only the items worth a look: non-Windows executables that " +
+            "were installed or updated in the last 30 days (a Recent status). Turn it on to list every process.\n" +
             "- Task Manager - opens taskmgr.exe.\n" +
             "- Scan (per row) - verify the executable's signature or look it up on VirusTotal by SHA-256.\n" +
             "- Right-click a row to open its file location, copy the path, or search the web for it.\n" +
@@ -155,11 +163,18 @@ namespace BrowseSafe
             "Programs configured to launch at startup. Status is the newer of two dates.\n" +
             "\n" +
             "# Columns\n" +
+            "- Enabled - whether the entry runs at login. Disabled entries (greyed out) are turned off in " +
+            "Task Manager / Settings and tracked in the Explorer\\StartupApproved registry keys.\n" +
             "- Registry added - when the Run-key entry last changed (the key is shared, so this is approximate).\n" +
             "- Exe modified   - modify date of the target executable.\n" +
             "\n" + Recency +
             "\n" +
+            "# Filters\n" +
+            "- All - off by default to show only enabled entries; turn it on to include disabled ones. " +
+            "You can also filter the Enabled column directly.\n" +
+            "\n" +
             "# Special actions\n" +
+            "- Manage startup - opens the Windows Settings Startup Apps page, where entries can be enabled or disabled.\n" +
             "- Scan (per row) - verify the executable's signature or look it up on VirusTotal.\n" +
             "- Right-click a row to open its file location, manage startup apps in Settings, or open Task Manager.\n" +
             "\n" + Common);
@@ -247,6 +262,65 @@ namespace BrowseSafe
             "Message. Invalid regex falls back to a plain substring match. Clear resets all filters.\n" +
             "- Event Viewer - opens the Windows Event Viewer.\n" +
             "- Right-click a row to open Event Viewer, copy the message, search the web, or show full details.\n" +
+            "\n" + Common);
+
+        public static readonly HelpInfo Awake = new("Awake / Sleep Periods",
+            "# What this shows\n" +
+            "Recent periods the computer was awake, reconstructed from the System event log's power " +
+            "events (boot, resume-from-sleep, sleep, and shutdown). Each row is one awake interval, " +
+            "newest first. Reading the System log needs no administrator rights.\n" +
+            "\n" +
+            "# Columns\n" +
+            "- # - the interval's number (1 = oldest in the window).\n" +
+            "- Start - when the machine booted or woke.\n" +
+            "- End - when it next slept or shut down, with a code:\n" +
+            "    (off) clean shutdown   (slp) sleep / hibernate   (pwr) ended unexpectedly (crash / power loss)   (on) still awake now.\n" +
+            "- Duration - how long the machine stayed awake.\n" +
+            "- Why - what started the period, taken from the wake source: a power button / lid / input " +
+            "device (User), a scheduled task such as Windows Update or defrag (Scheduler), a Wake-on-LAN " +
+            "packet (Network), or a cold power-on.\n" +
+            "\n" +
+            "# Status colours\n" +
+            "- Green  - the current session (still awake).\n" +
+            "- Yellow - the period ended unexpectedly (no clean sleep/shutdown was logged).\n" +
+            "\n" +
+            "# Note\n" +
+            "Covers the last 14 days. When a shutdown wasn't logged cleanly the End time can't be known, " +
+            "so it shows \"? (pwr)\" with no duration. Scheduled-wake task names come straight from the " +
+            "Power-Troubleshooter event text.\n" +
+            "\n" +
+            "# Special actions\n" +
+            "- Event Viewer - opens the Windows Event Viewer to inspect the underlying power events.\n" +
+            "- Filter the Why column with a regular expression.\n" +
+            "\n" + Common);
+
+        public static readonly HelpInfo RootCerts = new("Trusted Root CAs",
+            "# What this shows\n" +
+            "The certificates in your trusted-root stores (Local Machine + Current User). A root CA is " +
+            "trusted to vouch for ANY HTTPS site, so an unexpected root means your encrypted browsing can " +
+            "be silently intercepted (man-in-the-middle). Chrome on Windows honours these roots, so this " +
+            "is directly relevant to safe browsing. Reading the store needs no administrator rights.\n" +
+            "\n" +
+            "# Status\n" +
+            "- Intercept - a root from a security/proxy product that performs TLS inspection. It can " +
+            "decrypt your HTTPS traffic; expected only if you (or your IT) run that product.\n" +
+            "- Review (red) - a non-public root added in the last 30 days. Confirm you installed it - a " +
+            "freshly planted root is the classic HTTPS-interception attack.\n" +
+            "- Review (yellow) - a non-public root CA (enterprise / AV / developer). Verify it is expected.\n" +
+            "- Public CA / System/Local - a well-known public authority or a benign built-in root.\n" +
+            "\n" +
+            "# Columns\n" +
+            "- Subject (CA) / Issuer - the authority's name (root certificates are self-issued).\n" +
+            "- Expires - the certificate's validity end date.\n" +
+            "- Note - why the row is flagged, and whether it is expired.\n" +
+            "\n" +
+            "# Filters\n" +
+            "- All - off by default to show only the non-public roots worth reviewing; turn it on to list " +
+            "every trusted root including the standard public CAs.\n" +
+            "\n" +
+            "# Special actions\n" +
+            "- Manage certificates - opens the Certificates console (certlm.msc) where a root can be removed.\n" +
+            "- Right-click a row to copy its subject/thumbprint, open the console, or search the web for the CA.\n" +
             "\n" + Common);
 
         public static readonly HelpInfo Firewall = new("Windows Firewall",

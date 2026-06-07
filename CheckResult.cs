@@ -27,12 +27,28 @@ namespace BrowseSafe
         /// </summary>
         public bool Table { get; }
 
+        /// <summary>
+        /// Optional inline link for UI renderers: a clickable label (<see cref="LinkLabel"/>)
+        /// that opens <see cref="LinkUri"/>. A <c>chrome://</c> URI is launched via chrome.exe;
+        /// anything else is opened with the shell. Ignored by the plain-text report.
+        /// </summary>
+        public string? LinkLabel { get; private set; }
+        public string? LinkUri { get; private set; }
+
         public CheckResult(CheckStatus status, string name, string detail, bool table = false)
         {
             Status = status;
             Name = name;
             Detail = detail;
             Table = table;
+        }
+
+        /// <summary>Attaches a clickable link to this result and returns it (fluent).</summary>
+        public CheckResult WithLink(string label, string uri)
+        {
+            LinkLabel = label;
+            LinkUri = uri;
+            return this;
         }
     }
 

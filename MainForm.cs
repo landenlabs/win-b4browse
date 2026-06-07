@@ -4,7 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Printing;
 using System.IO;
+using System.Net.NetworkInformation;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -22,6 +24,7 @@ namespace BrowseSafe
         private readonly Button _chromeButton;
         private readonly Button _emailButton;
         private readonly Button _copyButton;
+        private readonly Button _printButton;
         private readonly ToolTip _tips = new();
         private readonly Panel _leftPanel;
         private readonly TabControl _tabs;
@@ -30,6 +33,14 @@ namespace BrowseSafe
         private Panel _toolbar = null!;
         private Label _leftHeader = null!;
         private Panel _leftBottom = null!;
+
+        // Bottom status bar: network indicator (left) + font-scale control (right).
+        private Panel _statusBar = null!;
+        private Label _netStatus = null!;
+        private Label _scaleCaption = null!;
+        private Button _scaleMinus = null!;
+        private Label _scaleLabel = null!;
+        private Button _scalePlus = null!;
 
         // Windows Security deep-link pages (windowsdefender: protocol).
         private static readonly (string Label, string Uri)[] SecurityShortcuts =
@@ -123,12 +134,24 @@ namespace BrowseSafe
             };
             _copyButton.Click += (_, _) => CopyCurrentTab();
 
+            _printButton = new Button
+            {
+                Text = "",                            // Segoe MDL2 "Print" glyph
+                Width = 36, Height = 28, Top = 7,
+                FlatStyle = FlatStyle.System,
+                Font = new Font("Segoe MDL2 Assets", 12f),
+            };
+            _printButton.Text = "";   // Segoe MDL2 "Print" glyph
+            _printButton.Click += (_, _) => PrintCurrentTab();
+
             _tips.SetToolTip(_emailButton, "Email this tab's report (opens Gmail in Chrome; full report copied to the clipboard)");
             _tips.SetToolTip(_copyButton, "Copy this tab's report to the clipboard");
+            _tips.SetToolTip(_printButton, "Print this tab's report (or save as PDF)");
 
             toolbar.Controls.Add(_toggleButton);
             toolbar.Controls.Add(_emailButton);
             toolbar.Controls.Add(_copyButton);
+            toolbar.Controls.Add(_printButton);
             toolbar.SizeChanged += (_, _) => LayoutToolbarRight();
             LayoutToolbarRight();
 
@@ -254,7 +277,7 @@ namespace BrowseSafe
             _tabs.SelectedIndexChanged += (_, _) => { AutoRunSelectedTab(); UpdateBanner(); _tabs.Invalidate(); };
 
             _scanView = AddTab("Safety Scan", "scan", "Run Safety Checks",
-                "Click to scan.", ScanSteps(), reportVerdict: true);
+                "Click to scan.", ScanSteps(), reportVerdict: true, requiresNetwork: true);
             _scanView.Completed += OnScanCompleted;
 
             AddViewTab("Patches", "patches", TabViews.BuildPatches());
@@ -268,22 +291,133 @@ namespace BrowseSafe
             AddViewTab("Devices", "devices", TabViews.BuildDevices());
             AddViewTab("Win Extn", "winext", TabViews.BuildWinExt());
             AddViewTab("Events", "events", TabViews.BuildEvents());
+            AddViewTab("Awake", "awake", TabViews.BuildAwake());
+            AddViewTab("Root CAs", "rootca", TabViews.BuildRootCerts());
             AddViewTab("Firewall", "firewall", TabViews.BuildFirewall());
             if (Elevation.IsAdmin)
                 AddViewTab("Restores", "restores", TabViews.BuildRestores());
 
             AddViewTab("Links", "links", TabViews.BuildLinks());
 
-            // Add Fill first, then Left, then Top items (outermost added last).
+            BuildStatusBar();
+
+            // Add Fill first, then docked edges (outermost added last). The status bar is
+            // added after the left panel so it spans the full width along the bottom.
             Controls.Add(_tabs);
             Controls.Add(_leftPanel);
+            Controls.Add(_statusBar);
             Controls.Add(toolbar);
             Controls.Add(_banner);
             Controls.Add(_emailBusy);   // floating spinner shown while an email report builds
 
             UpdateBanner(); // initial title for the active (Safety Scan) tab
+            UpdateNetStatus();
+            UpdateScaleLabel();
             ApplyThemeColors(); // paint buttons/chrome for the startup theme
             Theme.Changed += () => { ApplyThemeColors(); UpdateBanner(); _tabs.Invalidate(); };
+            Theme.ScaleChanged += UpdateScaleLabel;
+
+            // Live-update the network indicator when adapters come up / go down.
+            NetworkChange.NetworkAvailabilityChanged += OnNetworkChanged;
+            NetworkChange.NetworkAddressChanged += OnNetworkChanged;
+        }
+
+        /// <summary>Builds the bottom status bar: a network indicator on the left and a
+        /// Chrome-style [ - 100% + ] font-scale control on the right.</summary>
+        private void BuildStatusBar()
+        {
+            _statusBar = new Panel { Dock = DockStyle.Bottom, Height = 30, BackColor = Theme.Toolbar };
+
+            _netStatus = new Label
+            {
+                AutoSize = true, Left = 12, Top = 7, Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9f),
+            };
+            _netStatus.Click += (_, _) => NetworkStatus.OpenSettings();
+            _tips.SetToolTip(_netStatus, "Open Windows network / airplane-mode settings");
+            _statusBar.Controls.Add(_netStatus);
+
+            // Font-scale control: caption + [ - 100% + ], right-aligned via LayoutStatusBar.
+            _scaleCaption = new Label
+            {
+                Text = "Font size", AutoSize = true, Top = 7, ForeColor = Theme.Subtle,
+                Font = new Font("Segoe UI", 9f),
+            };
+            _scaleMinus = new Button
+            {
+                Text = "−", Width = 28, Height = 24, Top = 3, FlatStyle = FlatStyle.System,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            };
+            _scaleLabel = new Label
+            {
+                AutoSize = false, Width = 52, Height = 24, Top = 3,
+                TextAlign = ContentAlignment.MiddleCenter, Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9f),
+            };
+            _scalePlus = new Button
+            {
+                Text = "+", Width = 28, Height = 24, Top = 3, FlatStyle = FlatStyle.System,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
+            };
+            _scaleMinus.Click += (_, _) => Theme.StepScale(-1);
+            _scalePlus.Click += (_, _) => Theme.StepScale(+1);
+            _scaleLabel.Click += (_, _) => Theme.SetScale(1.0f);   // click the % to reset to 100%
+            _tips.SetToolTip(_scaleMinus, "Smaller content font");
+            _tips.SetToolTip(_scalePlus, "Larger content font");
+            _tips.SetToolTip(_scaleLabel, "Content font scale - click to reset to 100%");
+
+            _statusBar.Controls.Add(_scaleCaption);
+            _statusBar.Controls.Add(_scaleMinus);
+            _statusBar.Controls.Add(_scaleLabel);
+            _statusBar.Controls.Add(_scalePlus);
+
+            _statusBar.SizeChanged += (_, _) => LayoutStatusBar();
+            LayoutStatusBar();
+        }
+
+        /// <summary>Right-aligns the font-scale group within the status bar.</summary>
+        private void LayoutStatusBar()
+        {
+            if (_statusBar == null) return;
+            int right = _statusBar.ClientSize.Width - 10;
+            _scalePlus.Left = Math.Max(0, right - _scalePlus.Width);
+            _scaleLabel.Left = _scalePlus.Left - _scaleLabel.Width - 2;
+            _scaleMinus.Left = _scaleLabel.Left - _scaleMinus.Width - 2;
+            _scaleCaption.Left = _scaleMinus.Left - _scaleCaption.Width - 10;
+            _scaleCaption.Top = (_statusBar.ClientSize.Height - _scaleCaption.Height) / 2;
+            _netStatus.Top = (_statusBar.ClientSize.Height - _netStatus.Height) / 2;
+        }
+
+        /// <summary>Refreshes the left network indicator from the current adapter state.</summary>
+        private void UpdateNetStatus()
+        {
+            bool up = NetworkStatus.IsAvailable();
+            _netStatus.Text = up ? "●  Network connected" : "●  Network not available";
+            _netStatus.ForeColor = up
+                ? (Theme.IsDark ? Color.FromArgb(90, 200, 100) : Color.FromArgb(0, 140, 0))
+                : (Theme.IsDark ? Color.FromArgb(240, 110, 110) : Color.FromArgb(200, 0, 0));
+            LayoutStatusBar();
+        }
+
+        /// <summary>Updates the "100%" readout from the current <see cref="Theme.FontScale"/>.</summary>
+        private void UpdateScaleLabel()
+        {
+            _scaleLabel.Text = $"{Theme.FontScale * 100:0}%";
+            LayoutStatusBar();
+        }
+
+        private void OnNetworkChanged(object? sender, EventArgs e)
+        {
+            // NetworkChange events arrive on a background thread; marshal to the UI.
+            if (IsHandleCreated) BeginInvoke(new Action(UpdateNetStatus));
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
+            NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
+            Theme.ScaleChanged -= UpdateScaleLabel;
+            base.OnFormClosed(e);
         }
 
         /// <summary>Re-colours the form chrome (left panel, toolbar, all buttons) for the current theme.</summary>
@@ -297,6 +431,11 @@ namespace BrowseSafe
             _leftHeader.ForeColor = Theme.Text;
             foreach (Control c in _leftBottom.Controls)
                 if (c is Label) c.ForeColor = Theme.Subtle;
+
+            _statusBar.BackColor = Theme.Toolbar;
+            _scaleCaption.ForeColor = Theme.Subtle;
+            _scaleLabel.ForeColor = Theme.Text;
+            UpdateNetStatus();   // re-tint the indicator for the new theme
 
             // Explicitly paint every button (toolbar, left panel, and inside each tab view).
             Theme.StyleButtons(this);
@@ -316,15 +455,16 @@ namespace BrowseSafe
             ("atomic time sync",    SafetyChecks.CheckTimeSync),
             ("Windows security",    SafetyChecks.CheckWindowsSecurity),
             ("network sniffers",    SafetyChecks.CheckPromiscuousMode),
+            ("network adapters",    SafetyChecks.CheckNetworkAdapters),
         };
 
         private static (string, Func<CheckGroup>)[] One(string label, Func<CheckGroup> run)
             => new[] { (label, run) };
 
         private ResultsView AddTab(string title, string scope, string runLabel, string intro,
-            (string, Func<CheckGroup>)[] steps, bool reportVerdict)
+            (string, Func<CheckGroup>)[] steps, bool reportVerdict, bool requiresNetwork = false)
         {
-            var view = new ResultsView(runLabel, intro, steps, reportVerdict, TabHelp.Scan);
+            var view = new ResultsView(runLabel, intro, steps, reportVerdict, TabHelp.Scan, requiresNetwork);
             AddViewTab(title, scope, view);
             return view;
         }
@@ -390,6 +530,8 @@ namespace BrowseSafe
             ["devices"] = "Installed device changes",
             ["winext"] = "File Explorer shell extensions",
             ["events"] = "Recent system & security events",
+            ["awake"] = "Recent awake / sleep periods",
+            ["rootca"] = "Trusted root certificate authorities",
             ["firewall"] = "Windows Firewall configuration",
             ["restores"] = "System Restore points",
         };
@@ -492,17 +634,108 @@ namespace BrowseSafe
             }
         }
 
+        /// <summary>
+        /// Builds the active tab's report on a background thread, then sends it to a printer
+        /// chosen in the standard print dialog (which includes "Microsoft Print to PDF").
+        /// </summary>
+        private async void PrintCurrentTab()
+        {
+            string scope = _tabs.SelectedTab?.Tag as string ?? "scan";
+            string tabName = _tabs.SelectedTab?.Text ?? scope;
+
+            _printButton.Enabled = false;
+            CenterEmailBusy();
+            _emailBusy.Start();
+            string? reportText = null;
+            try
+            {
+                var report = await Task.Run(() => Reports.Build(scope));
+                reportText = report.Text;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Could not build report: " + ex.Message, "Print report",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                _emailBusy.Stop();
+                _printButton.Enabled = true;
+            }
+
+            // Show the (modal) print dialog after the spinner stops.
+            if (reportText != null) PrintReport(reportText, $"Browse Safe - {tabName}");
+        }
+
+        /// <summary>
+        /// Prints a plain-text report with a monospaced font, paginating and wrapping long
+        /// lines to the page margins. Uses the standard Windows print dialog.
+        /// </summary>
+        private void PrintReport(string text, string docName)
+        {
+            using var font = new Font("Consolas", 9f);
+            var raw = text.Replace("\r\n", "\n").Split('\n');
+
+            List<string>? lines = null;   // wrapped on the first page, when a Graphics is available
+            int next = 0;
+
+            using var doc = new PrintDocument { DocumentName = docName };
+            doc.PrintPage += (_, e) =>
+            {
+                var area = e.MarginBounds;
+                lines ??= WrapToWidth(raw, font, e.Graphics!, area.Width);
+
+                float lineH = font.GetHeight(e.Graphics!);
+                int perPage = Math.Max(1, (int)(area.Height / lineH));
+                float y = area.Top;
+
+                for (int drawn = 0; drawn < perPage && next < lines.Count; drawn++, next++)
+                {
+                    e.Graphics!.DrawString(lines[next], font, Brushes.Black, area.Left, y);
+                    y += lineH;
+                }
+                e.HasMorePages = next < lines.Count;
+                if (!e.HasMorePages) next = 0;   // reset so a reprint starts at the top
+            };
+
+            using var dlg = new PrintDialog { Document = doc, UseEXDialog = true };
+            if (dlg.ShowDialog(this) != DialogResult.OK) return;
+            try { doc.Print(); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Print failed: " + ex.Message, "Print report",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>Character-wraps each line to the page width (Consolas is monospaced).</summary>
+        private static List<string> WrapToWidth(string[] raw, Font font, Graphics g, int maxWidth)
+        {
+            float charW = g.MeasureString("0000000000", font).Width / 10f;
+            int maxChars = Math.Max(10, (int)(maxWidth / Math.Max(1f, charW)));
+            var outp = new List<string>(raw.Length);
+            foreach (var ln in raw)
+            {
+                string s = ln.TrimEnd('\r');
+                if (s.Length <= maxChars) { outp.Add(s); continue; }
+                for (int i = 0; i < s.Length; i += maxChars)
+                    outp.Add(s.Substring(i, Math.Min(maxChars, s.Length - i)));
+            }
+            return outp;
+        }
+
         private void CenterEmailBusy()
         {
             _emailBusy.Left = Math.Max(0, (ClientSize.Width - _emailBusy.Width) / 2);
             _emailBusy.Top = Math.Max(0, (ClientSize.Height - _emailBusy.Height) / 2);
         }
 
-        /// <summary>Pins the email + copy icon buttons to the right edge of the toolbar.</summary>
+        /// <summary>Pins the email + copy + print icon buttons to the right edge of the toolbar.</summary>
         private void LayoutToolbarRight()
         {
             _emailButton.Left = Math.Max(0, _toolbar.ClientSize.Width - _emailButton.Width - 8);
             _copyButton.Left = Math.Max(0, _emailButton.Left - _copyButton.Width - 6);
+            _printButton.Left = Math.Max(0, _copyButton.Left - _printButton.Width - 6);
         }
 
         private void OpenUri(string uri)

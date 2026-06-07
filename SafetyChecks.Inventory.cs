@@ -38,12 +38,31 @@ namespace BrowseSafe
             }
             group.Add(CheckStatus.Info, "Path", exe);
 
+            string? installedVer = null;
             try
             {
                 var fi = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe);
-                group.Add(CheckStatus.Info, "Version", fi.ProductVersion ?? "(unknown)");
+                installedVer = fi.ProductVersion;
+                group.Add(CheckStatus.Info, "Version", installedVer ?? "(unknown)");
             }
             catch { /* ignore */ }
+
+            // Compare the installed build against the current stable release (Google's public
+            // version-history API). Network-dependent and best-effort: degrades to Info offline.
+            if (!string.IsNullOrEmpty(installedVer))
+            {
+                string? latest = GetLatestChromeStable();
+                if (latest == null)
+                    group.Add(CheckStatus.Info, "Latest version",
+                        "Could not check the latest stable release (offline or API unavailable).");
+                else if (CompareChromeVersions(installedVer, latest) >= 0)
+                    group.Add(CheckStatus.Pass, "Up to date", $"Installed build matches latest stable ({latest}).")
+                        .WithLink("[ check for updates ]", "chrome://settings/help");
+                else
+                    group.Add(CheckStatus.Warn, "Update available",
+                        $"Installed {installedVer} is behind the latest stable {latest} - update and relaunch Chrome.")
+                        .WithLink("[ check for updates ]", "chrome://settings/help");
+            }
 
             string? hash = Sha256File(exe);
             group.Add(hash != null ? CheckStatus.Info : CheckStatus.Warn,
@@ -66,6 +85,63 @@ namespace BrowseSafe
             }
 
             return group;
+        }
+
+        /// <summary>
+        /// Highest current stable Chrome version for Windows, from Google's public
+        /// version-history API. Returns null on any network/parse failure (treated as
+        /// "unknown", never an error). Uses the shared 6-second HttpClient.
+        /// </summary>
+        private static string? GetLatestChromeStable()
+        {
+            try
+            {
+                string json = Http.GetStringAsync(
+                    "https://versionhistory.googleapis.com/v1/chrome/platforms/win64/channels/stable/versions")
+                    .GetAwaiter().GetResult();
+
+                using var doc = JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("versions", out var arr) || arr.ValueKind != JsonValueKind.Array)
+                    return null;
+
+                string? best = null;
+                foreach (var v in arr.EnumerateArray())
+                {
+                    if (!v.TryGetProperty("version", out var vv) || vv.ValueKind != JsonValueKind.String) continue;
+                    string s = vv.GetString() ?? "";
+                    if (s.Length == 0) continue;
+                    if (best == null || CompareChromeVersions(s, best) > 0) best = s;
+                }
+                return best;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Compares dotted version strings numerically (e.g. 126.0.6478.127). Missing parts = 0.</summary>
+        private static int CompareChromeVersions(string a, string b)
+        {
+            int[] pa = ParseVersionParts(a), pb = ParseVersionParts(b);
+            int len = Math.Max(pa.Length, pb.Length);
+            for (int i = 0; i < len; i++)
+            {
+                int x = i < pa.Length ? pa[i] : 0;
+                int y = i < pb.Length ? pb[i] : 0;
+                if (x != y) return x.CompareTo(y);
+            }
+            return 0;
+        }
+
+        private static int[] ParseVersionParts(string v)
+        {
+            var parts = v.Split('.');
+            var nums = new int[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+            {
+                int j = 0;
+                while (j < parts[i].Length && char.IsDigit(parts[i][j])) j++;
+                nums[i] = j > 0 && int.TryParse(parts[i].AsSpan(0, j), out int n) ? n : 0;
+            }
+            return nums;
         }
 
         // ----------------------------------------------------------------- //
@@ -483,9 +559,10 @@ namespace BrowseSafe
             foreach (var it in items.OrderByDescending(i => i.StatusSort))
             {
                 if (++shown > MaxList) break;
-                bool risky = LooksRisky(it.Command) || LooksRisky(it.ExePath);
+                // A disabled entry doesn't run at login, so don't flag it as a risk.
+                bool risky = it.Enabled && (LooksRisky(it.Command) || LooksRisky(it.ExePath));
                 group.Add(risky ? CheckStatus.Warn : CheckStatus.Info, it.Name,
-                    $"{it.Location}  -  added {it.RegistryAddedText}  -  {(it.ExePath.Length > 0 ? it.ExePath : it.Command)}");
+                    $"{it.Location}  -  {it.EnabledText}  -  added {it.RegistryAddedText}  -  {(it.ExePath.Length > 0 ? it.ExePath : it.Command)}");
             }
             if (items.Count > MaxList)
                 group.Add(CheckStatus.Info, "...", $"{items.Count - MaxList} more not shown.");
@@ -559,6 +636,11 @@ namespace BrowseSafe
                     if (targets.TryGetValue(it.Command, out var tgt) && tgt.Length > 0) it.ExePath = tgt;
             }
 
+            // Enabled/disabled state lives in the Explorer\StartupApproved keys (what Task
+            // Manager / Settings toggle). Read once per hive and look each entry up by name.
+            var approvedHkcu = ReadStartupApproved(Registry.CurrentUser);
+            var approvedHklm = ReadStartupApproved(Registry.LocalMachine);
+
             foreach (var it in list)
             {
                 if (it.ExePath.Length > 0)
@@ -573,8 +655,50 @@ namespace BrowseSafe
                 if (it.ExeModified != null && (status == null || it.ExeModified > status)) status = it.ExeModified;
                 it.StatusSort = status ?? DateTime.MinValue;
                 it.DaysOld = status != null ? Math.Max(0, (int)(DateTime.Now - status.Value).TotalDays) : null;
+
+                // StartupApproved value name: the Run value name (registry) or the file name (folder).
+                bool hklm = it.Location.StartsWith("HKLM", StringComparison.OrdinalIgnoreCase)
+                            || it.Location.Equals("Startup (common)", StringComparison.OrdinalIgnoreCase);
+                string lookup = it.Source == "Folder" ? Path.GetFileName(it.Command) : it.Name;
+                var primary = hklm ? approvedHklm : approvedHkcu;
+                var fallback = hklm ? approvedHkcu : approvedHklm;
+                bool? state = primary.TryGetValue(lookup, out var e1) ? e1
+                            : fallback.TryGetValue(lookup, out var e2) ? e2
+                            : null;
+                it.Enabled = state ?? true;        // entries with no StartupApproved record are enabled
+                it.EnabledText = it.Enabled ? "Enabled" : "Disabled";
             }
             return list;
+        }
+
+        private const string StartupApprovedBase =
+            @"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved";
+
+        /// <summary>
+        /// Reads the StartupApproved state for a hive into a name -> enabled map, merging the
+        /// Run, Run32 (WOW64) and StartupFolder subkeys. The state is a REG_BINARY whose first
+        /// byte is even when enabled and odd when disabled (what Task Manager writes).
+        /// </summary>
+        private static Dictionary<string, bool> ReadStartupApproved(RegistryKey hive)
+        {
+            var map = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            foreach (var sub in new[] { "Run", "Run32", "StartupFolder" })
+            {
+                try
+                {
+                    using var k = hive.OpenSubKey(StartupApprovedBase + "\\" + sub);
+                    if (k == null) continue;
+                    foreach (var name in k.GetValueNames())
+                    {
+                        if (string.IsNullOrEmpty(name)) continue;
+                        bool enabled = true;
+                        if (k.GetValue(name) is byte[] b && b.Length >= 1) enabled = (b[0] & 1) == 0;
+                        map[name] = enabled;
+                    }
+                }
+                catch { /* ignore inaccessible subkey */ }
+            }
+            return map;
         }
 
         /// <summary>Resolves .lnk targets in one PowerShell call (WScript.Shell). Returns lnkPath -> targetPath.</summary>

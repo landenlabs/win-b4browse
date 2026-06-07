@@ -399,28 +399,10 @@ namespace BrowseSafe
                 "User Account Control (UAC)",
                 uac != 0 ? "Enabled." : "DISABLED - elevation prompts are off.");
 
-            // SmartScreen (Explorer / app & file reputation)
-            string smart = ReadHklmString(
-                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer", "SmartScreenEnabled");
-            if (string.IsNullOrEmpty(smart))
-            {
-                group.Add(CheckStatus.Warn, "SmartScreen (Explorer)",
-                    "Not configured / default. Verify in Windows Security.");
-            }
-            else
-            {
-                bool on = !smart.Equals("Off", StringComparison.OrdinalIgnoreCase);
-                group.Add(on ? CheckStatus.Pass : CheckStatus.Fail,
-                    "SmartScreen (Explorer)", on ? $"Enabled ({smart})." : "DISABLED.");
-            }
-
-            // SmartScreen for Microsoft Edge / app installs (best-effort)
-            int edgeSmart = ReadHklmDword(
-                @"SOFTWARE\Policies\Microsoft\MicrosoftEdge\PhishingFilter", "EnabledV9", -1);
-            if (edgeSmart >= 0)
-                group.Add(edgeSmart != 0 ? CheckStatus.Pass : CheckStatus.Warn,
-                    "SmartScreen (Edge phishing filter)",
-                    edgeSmart != 0 ? "Enabled." : "Disabled by policy.");
+            // Microsoft Defender SmartScreen (app/file & Edge reputation). Modern Windows
+            // leaves the legacy Explorer value unset by default (= On) and stores the state
+            // elsewhere, so only an explicit Off is a problem (this was a frequent false WARN).
+            AddSmartScreen(group);
 
             // -- Items gathered via a single PowerShell query --
             try
@@ -659,11 +641,61 @@ $r | ConvertTo-Json -Compress -Depth 5
         // ----------------------------------------------------------------- //
         // Registry helpers (HKLM reads succeed for normal users).
         // ----------------------------------------------------------------- //
+        /// <summary>
+        /// Reports Microsoft Defender SmartScreen. SmartScreen guards app/file downloads (and
+        /// Edge URLs) via Microsoft's reputation service; Chrome uses its own Safe Browsing, so
+        /// this mainly backs up installer/file downloads. Unset registry values mean the
+        /// default (On), so only an explicit Off is flagged - avoiding the old false WARN.
+        /// </summary>
+        private static void AddSmartScreen(CheckGroup group)
+        {
+            // App & file SmartScreen: the policy value wins; otherwise the (often-unset) Explorer value.
+            int policy = ReadHklmDword(@"SOFTWARE\Policies\Microsoft\Windows\System", "EnableSmartScreen", -1);
+            string level = ReadHklmString(@"SOFTWARE\Policies\Microsoft\Windows\System", "ShellSmartScreenLevel");
+            string legacy = ReadHklmString(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer", "SmartScreenEnabled");
+
+            if (policy == 0)
+                group.Add(CheckStatus.Fail, "SmartScreen (apps & files)", "Disabled by policy.");
+            else if (legacy.Equals("Off", StringComparison.OrdinalIgnoreCase))
+                group.Add(CheckStatus.Fail, "SmartScreen (apps & files)", "Turned off.");
+            else
+            {
+                string detail =
+                    policy == 1 ? (level.Length > 0 ? $"Enabled by policy ({level})." : "Enabled by policy.")
+                    : legacy.Length > 0 ? $"Enabled ({legacy})."
+                    : "Default (On) - warns on unrecognized apps/files.";
+                group.Add(CheckStatus.Pass, "SmartScreen (apps & files)", detail);
+            }
+
+            // SmartScreen for Microsoft Edge (Chromium), only when set by policy. Edge isn't the
+            // focus here, so a disabled state is Info rather than a warning.
+            int edge = ReadHklmDword(@"SOFTWARE\Policies\Microsoft\Edge", "SmartScreenEnabled", -1);
+            if (edge >= 0)
+                group.Add(edge != 0 ? CheckStatus.Pass : CheckStatus.Info, "SmartScreen (Edge)",
+                    edge != 0 ? "Enabled by policy." : "Disabled by policy (Chrome uses its own Safe Browsing).");
+
+            // SmartScreen for Microsoft Store apps (per-user). Flag only an explicit Off.
+            int store = ReadHkcuDword(@"SOFTWARE\Microsoft\Windows\CurrentVersion\AppHost", "EnableWebContentEvaluation", -1);
+            if (store == 0)
+                group.Add(CheckStatus.Warn, "SmartScreen (Store apps)", "Web-content evaluation disabled.");
+        }
+
         private static int ReadHklmDword(string subkey, string value, int fallback)
         {
             try
             {
                 using var key = Registry.LocalMachine.OpenSubKey(subkey);
+                if (key?.GetValue(value) is int i) return i;
+            }
+            catch { /* fall through */ }
+            return fallback;
+        }
+
+        private static int ReadHkcuDword(string subkey, string value, int fallback)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(subkey);
                 if (key?.GetValue(value) is int i) return i;
             }
             catch { /* fall through */ }

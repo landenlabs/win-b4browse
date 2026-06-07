@@ -23,6 +23,10 @@ namespace BrowseSafe
         private static readonly Color RedFore = Color.FromArgb(150, 0, 0);
         private static readonly Color YelBack = Color.FromArgb(255, 244, 180);
         private static readonly Color YelFore = Color.FromArgb(120, 90, 0);
+        private static readonly Color GrnBack = Color.FromArgb(208, 240, 208);
+        private static readonly Color GrnFore = Color.FromArgb(0, 110, 0);
+        private static readonly Color DisBack = Color.FromArgb(235, 235, 235);
+        private static readonly Color DisFore = Color.FromArgb(140, 140, 140);
 
         // ---- Installed --------------------------------------------------- //
         public static Control BuildInstalled()
@@ -366,13 +370,13 @@ namespace BrowseSafe
                 severity: items => WorstDays(items, o => (o as ProcessItem)?.DaysOld),
                 onRowContext: o => ShowProcessMenu(grid, (ProcessItem)o),
                 showAllToggle: ("All",
-                    "Off: show only unusual (non-Windows) processes with an Old executable.  On: show every running process.",
+                    "Off: show only unusual (non-Windows) processes whose executable changed in the last 30 days.  On: show every running process.",
                     o =>
                 {
                     var p = (ProcessItem)o;
                     bool unusual = p.ExePath.Length > 0 && !p.ExePath.StartsWith(win, StringComparison.OrdinalIgnoreCase);
-                    bool old = p.DaysOld is >= 30;
-                    return !(unusual && old);   // when off, show ONLY unusual + Old
+                    bool recent = p.DaysOld is >= 0 and < 30;   // installed/updated within the last 30 days
+                    return !(unusual && recent);   // when off, show ONLY unusual + recently changed
                 }));
             return grid;
         }
@@ -567,9 +571,10 @@ namespace BrowseSafe
             grid = new SortableGrid("Refresh",
                 () => SafetyChecks.GetChromeExtensions().Where(e => e.Enabled).Cast<object>().ToList(),
                 cols, defaultSortColumn: 2, defaultAscending: true,
+                extraButtons: new (string, Action)[] { ("Remove unsupported", () => RemoveUnsupportedExtensions(grid)) },
                 help: TabHelp.Chrome,
                 headerInfo: SafetyChecks.CheckChromeHeader,
-                headerHeight: 152,
+                headerHeight: 174,
                 severity: items =>
                 {
                     var s = SafetyChecks.ChromeSettingsSeverity();   // Safe Browsing / 3p-cookie risk
@@ -584,6 +589,67 @@ namespace BrowseSafe
                 onRowContext: o => ShowChromeMenu(grid, (ChromeExtension)o),
                 headerButton: ("Scan", () => ShowScanMenu(grid, "chrome.exe", SafetyChecks.ChromeExePath)));
             return grid;
+        }
+
+        /// <summary>
+        /// Backs up every Chrome extension to a zip in Downloads, then (after confirmation)
+        /// deletes the folders of all Manifest-V2 "Unsupported" extensions. Backup is best-effort;
+        /// if it fails the user is asked whether to proceed without one.
+        /// </summary>
+        private static async void RemoveUnsupportedExtensions(SortableGrid grid)
+        {
+            var form = grid.FindForm();
+
+            var all = await Task.Run(() => SafetyChecks.GetChromeExtensions());
+            var unsupported = all.Where(e => e.Unsupported).ToList();
+            if (unsupported.Count == 0)
+            {
+                MessageBox.Show(form, "No unsupported (Manifest V2) extensions were found.",
+                    "Remove unsupported extensions", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            string list = string.Join("\n", unsupported.Take(20)
+                .Select(e => $"   - {e.Name}  (v{e.Version})  [{e.ProfileName}]"));
+            if (unsupported.Count > 20) list += $"\n   ...and {unsupported.Count - 20} more";
+
+            string prompt =
+                $"Remove {unsupported.Count} unsupported extension(s)?\n\n{list}\n\n" +
+                $"First, all {all.Count} extension(s) will be backed up to:\n" +
+                "   Downloads\\bsafe-extension-backup.zip\n\n" +
+                "Close Chrome first for a clean removal. This permanently deletes the extension folders.";
+            if (MessageBox.Show(form, prompt, "Remove unsupported extensions",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
+            // 1) Backup (best-effort).
+            grid.SetStatus("Backing up extensions ...");
+            var (zipPath, zipCount, backupErr) = await Task.Run(() => SafetyChecks.BackupExtensions(all));
+
+            if (backupErr != null)
+            {
+                var choice = MessageBox.Show(form,
+                    $"The backup could not be created:\n   {backupErr}\n\nDelete the unsupported extensions anyway, WITHOUT a backup?",
+                    "Backup failed", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                if (choice != DialogResult.Yes) { grid.SetStatus("Cancelled - nothing removed."); return; }
+            }
+
+            // 2) Delete the unsupported extension folders.
+            grid.SetStatus("Removing unsupported extensions ...");
+            var (deleted, failed, errors) = await Task.Run(() => SafetyChecks.DeleteExtensionDirs(unsupported));
+
+            // 3) Report and refresh.
+            string summary = $"Removed {deleted} of {unsupported.Count} unsupported extension(s).";
+            if (backupErr == null) summary += $"\nBackup: {zipCount} extension(s) saved to\n   {zipPath}";
+            else summary += "\nNo backup was created.";
+            if (failed > 0)
+                summary += $"\n\n{failed} could not be removed (Chrome may be running):\n   " +
+                           string.Join("\n   ", errors.Take(8));
+
+            MessageBox.Show(form, summary, "Remove unsupported extensions",
+                MessageBoxButtons.OK, failed > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+
+            await grid.RunAsync();
         }
         private static void ShowChromeMenu(Control owner, ChromeExtension ext) {
             string exeDir = ext.ProfileDir;
@@ -687,6 +753,10 @@ namespace BrowseSafe
                     Text = o => RecencyLabel(((StartupItem)o).DaysOld),
                     Sort = o => ((StartupItem)o).StatusSort,
                     Style = o => RecencyStyle(((StartupItem)o).DaysOld) },
+                new GridColumn { Header = "Enabled", Width = 76,
+                    Text = o => ((StartupItem)o).EnabledText,
+                    Sort = o => ((StartupItem)o).Enabled ? 1 : 0,
+                    Style = o => ((StartupItem)o).Enabled ? null : ((Color, Color)?)(DisBack, DisFore) },
                 new GridColumn { Header = "Scan", Width = 64, Button = true, ButtonText = "Scan" },
                 new GridColumn { Header = "Registry added", Width = 110,
                     Text = o => ((StartupItem)o).RegistryAddedText,
@@ -702,8 +772,11 @@ namespace BrowseSafe
                 () => SafetyChecks.GetStartup().Cast<object>().ToList(),
                 cols, defaultSortColumn: 0, defaultAscending: false,
                 onButtonClick: o => { var it = (StartupItem)o; ShowScanMenu(grid, it.Name, () => ExistingPath(it.ExePath)); },
+                extraButtons: new (string, Action)[] { ("Manage startup", () => StartShell(grid, "ms-settings:startupapps")) },
                 help: TabHelp.Startup,
                 severity: items => WorstDays(items, o => (o as StartupItem)?.DaysOld),
+                showAllToggle: ("All", "Show disabled startup entries too (off = only enabled)",
+                    o => !((StartupItem)o).Enabled),
                 onRowContext: o => ShowStartupMenu(grid, (StartupItem)o));
             return grid;
         }
@@ -811,6 +884,113 @@ namespace BrowseSafe
                 severity: WorstEvents,
                 onRowContext: o => ShowEventMenu(grid, (EventItem)o));
             return grid;
+        }
+
+        // ---- Awake periods ----------------------------------------------- //
+        public static Control BuildAwake()
+        {
+            var cols = new[]
+            {
+                new GridColumn { Header = "#", Width = 54,
+                    Text = o => ((AwakePeriod)o).Index.ToString(),
+                    Sort = o => ((AwakePeriod)o).Index },
+                new GridColumn { Header = "Start", Width = 130,
+                    Text = o => ((AwakePeriod)o).StartText,
+                    Sort = o => ((AwakePeriod)o).Start },
+                new GridColumn { Header = "End", Width = 170,
+                    Text = o => ((AwakePeriod)o).EndText,
+                    Sort = o => ((AwakePeriod)o).EndSort,
+                    Style = o => AwakeRowStyle((AwakePeriod)o) },
+                new GridColumn { Header = "Duration", Width = 96,
+                    Text = o => ((AwakePeriod)o).DurationText,
+                    Sort = o => ((AwakePeriod)o).DurationMin },
+                new GridColumn { Header = "Why", Fill = 180,
+                    Text = o => ((AwakePeriod)o).Why,
+                    FilterKind = ColumnFilterKind.Regex },
+            };
+            return new SortableGrid("Refresh",
+                () => SafetyChecks.GetAwakePeriods().Cast<object>().ToList(),
+                cols, defaultSortColumn: 1, defaultAscending: false,   // newest first
+                extraButtons: new (string, Action)[] { ("Event Viewer", OpenEventViewer) },
+                help: TabHelp.Awake,
+                summary: () =>
+                {
+                    var ps = SafetyChecks.GetAwakePeriods();
+                    int unexpected = ps.Count(p => p.Unexpected);
+                    return unexpected > 0 ? $"{unexpected} ended unexpectedly (pwr)" : "all clean";
+                },
+                severity: AwakeSeverity);
+        }
+
+        // Current session -> green; an unexpected (no clean shutdown) end -> yellow.
+        private static (Color Back, Color Fore)? AwakeRowStyle(AwakePeriod p)
+            => p.Current ? (GrnBack, GrnFore) : p.Unexpected ? (YelBack, YelFore) : ((Color, Color)?)null;
+
+        private static TabSeverity AwakeSeverity(System.Collections.Generic.IReadOnlyList<object> items)
+        {
+            foreach (var o in items)
+                if (o is AwakePeriod p && p.Unexpected) return TabSeverity.Caution;
+            return TabSeverity.None;
+        }
+
+        // ---- Root CAs ---------------------------------------------------- //
+        public static Control BuildRootCerts()
+        {
+            SortableGrid grid = null!;
+            var cols = new[]
+            {
+                new GridColumn { Header = "Status", Width = 84,
+                    Text = o => ((RootCertItem)o).StatusLabel,
+                    Sort = o => (int)((RootCertItem)o).Severity,
+                    Style = o => RootStyle((RootCertItem)o) },
+                new GridColumn { Header = "Store", Width = 104,
+                    Text = o => ((RootCertItem)o).Store,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Subject (CA)", Fill = 150, Text = o => ((RootCertItem)o).Subject,
+                    FilterKind = ColumnFilterKind.Regex },
+                new GridColumn { Header = "Issuer", Fill = 110, Text = o => ((RootCertItem)o).Issuer },
+                new GridColumn { Header = "Expires", Width = 90,
+                    Text = o => ((RootCertItem)o).ExpiresText,
+                    Sort = o => ((RootCertItem)o).NotAfter },
+                new GridColumn { Header = "Note", Fill = 180, Text = o => ((RootCertItem)o).Note },
+            };
+            grid = new SortableGrid("Refresh",
+                () => SafetyChecks.GetRootCerts().Cast<object>().ToList(),
+                cols, defaultSortColumn: 0, defaultAscending: false,
+                extraButtons: new (string, Action)[] { ("Manage certificates", () => StartShell(grid, "certlm.msc")) },
+                help: TabHelp.RootCerts,
+                severity: RootSeverity,
+                showAllToggle: ("All", "Show well-known public / system roots too (off = only non-public roots to review)",
+                    o => ((RootCertItem)o).Expected),
+                onRowContext: o => ShowRootMenu(grid, (RootCertItem)o));
+            return grid;
+        }
+
+        private static (Color Back, Color Fore)? RootStyle(RootCertItem c) => c.Severity switch
+        {
+            TabSeverity.Alert => (RedBack, RedFore),
+            TabSeverity.Caution => (YelBack, YelFore),
+            _ => ((Color, Color)?)null,
+        };
+
+        private static TabSeverity RootSeverity(System.Collections.Generic.IReadOnlyList<object> items)
+        {
+            var s = TabSeverity.None;
+            foreach (var o in items) if (o is RootCertItem c) s = Sev.Max(s, c.Severity);
+            return s;
+        }
+
+        private static void ShowRootMenu(Control owner, RootCertItem c)
+        {
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Copy subject", null, (_, _) => { try { Clipboard.SetText(c.SubjectFull); } catch { } });
+            menu.Items.Add("Copy thumbprint", null, (_, _) => { try { Clipboard.SetText(c.Thumbprint); } catch { } });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Open Certificates console (certlm.msc)", null, (_, _) => StartShell(owner, "certlm.msc"));
+            menu.Items.Add("Search the web for this CA", null, (_, _) =>
+                OpenBrowser("https://www.google.com/search?q=" +
+                    HttpUtility.UrlEncode("root certificate authority " + c.Subject)));
+            menu.Show(Cursor.Position);
         }
 
         // Status label + colour: security-significant and Critical -> red; Error/Warning -> yellow.

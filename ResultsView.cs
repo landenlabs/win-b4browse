@@ -37,11 +37,41 @@ namespace BrowseSafe
         private readonly BusyOverlay _busy = new();
         private readonly IReadOnlyList<(string Label, Func<CheckGroup> Run)> _steps;
         private readonly bool _reportVerdict;
+        private readonly bool _requiresNetwork;
         private bool _running;
+        private bool _networkBlocked;
 
-        // Char range of the inline "Open hosts folder" link (-1 = absent).
-        private int _hostsLinkStart = -1;
-        private int _hostsLinkEnd = -1;
+        // Inline clickable links rendered into the output (section "open settings" actions,
+        // the hosts-folder link, and the offline "open network settings" link). Each region
+        // maps a character range in the RichTextBox to the action it triggers.
+        private sealed class LinkRegion
+        {
+            public int Start;
+            public int End;
+            public Action OnClick = () => { };
+        }
+        private readonly List<LinkRegion> _links = new();
+
+        /// <summary>
+        /// Per-section "open the relevant control panel" links, keyed by a substring of the
+        /// section heading. Lets the user jump straight to where a flagged setting is changed.
+        /// (Hosts File is handled separately - it opens a folder, not a URI.)
+        /// </summary>
+        private static readonly (string Match, string Label, string Uri)[] SectionLinks =
+        {
+            ("1. Current DNS",       "[ Open network adapters ]",    "ncpa.cpl"),
+            ("8. Proxy",             "[ Open proxy settings ]",      "ms-settings:network-proxy"),
+            ("9. Atomic Clock",      "[ Open date & time settings ]", "ms-settings:dateandtime"),
+            ("10. Windows Security", "[ Open Windows Security ]",     "windowsdefender://threat"),
+            // Capture-driver management: Device Manager disables/uninstalls a driver
+            // (View > Show hidden devices); Apps removes a third-party capture tool.
+            // PktMon is built-in and handled in the check text, not removable here.
+            ("11. Network Sniffer",  "[ Open Device Manager ]",      "devmgmt.msc"),
+            ("11. Network Sniffer",  "[ Open installed apps ]",      "ms-settings:appsfeatures"),
+            // Adapter bindings (IPv4/IPv6, capture/VPN filters) are toggled in the adapter's
+            // properties, reached from the classic Network Connections panel.
+            ("12. Network Adapters", "[ Open network connections ]", "ncpa.cpl"),
+        };
 
         /// <summary>True once the view has completed at least one run (for lazy auto-run).</summary>
         public bool HasRun { get; private set; }
@@ -64,10 +94,11 @@ namespace BrowseSafe
 
         public ResultsView(string runLabel, string intro,
             IReadOnlyList<(string Label, Func<CheckGroup> Run)> steps, bool reportVerdict,
-            HelpInfo? help = null)
+            HelpInfo? help = null, bool requiresNetwork = false)
         {
             _steps = steps;
             _reportVerdict = reportVerdict;
+            _requiresNetwork = requiresNetwork;
             Dock = DockStyle.Fill;
             BackColor = Theme.Surface;
 
@@ -111,7 +142,7 @@ namespace BrowseSafe
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
                 BorderStyle = BorderStyle.None,
-                Font = new Font("Consolas", 9.5f),
+                Font = Theme.Scaled("Consolas", 9.5f),
                 BackColor = Theme.Surface,
                 ForeColor = Theme.Text,
                 DetectUrls = false,
@@ -130,13 +161,26 @@ namespace BrowseSafe
             Resize += (_, _) => CenterBusy();
 
             Theme.Changed += OnThemeChanged;
-            Disposed += (_, _) => Theme.Changed -= OnThemeChanged;
+            Theme.ScaleChanged += OnScaleChanged;
+            Disposed += (_, _) => { Theme.Changed -= OnThemeChanged; Theme.ScaleChanged -= OnScaleChanged; };
         }
 
         private void OnThemeChanged()
         {
             if (!IsHandleCreated) { ApplyTheme(); return; }
             BeginInvoke(new Action(ApplyTheme));
+        }
+
+        private void OnScaleChanged()
+        {
+            if (!IsHandleCreated) { ApplyScale(); return; }
+            BeginInvoke(new Action(ApplyScale));
+        }
+
+        private void ApplyScale()
+        {
+            _output.Font = Theme.Scaled("Consolas", 9.5f);
+            if (HasRun) ReRender();   // re-emit content at the new size
         }
 
         private void ApplyTheme()
@@ -152,7 +196,8 @@ namespace BrowseSafe
         private void ReRender()
         {
             _output.Clear();
-            _hostsLinkStart = _hostsLinkEnd = -1;
+            _links.Clear();
+            if (_networkBlocked) { RenderNetworkWarning(); return; }
             foreach (var g in _lastGroups) RenderGroup(g);
         }
 
@@ -169,7 +214,25 @@ namespace BrowseSafe
             _runButton.Enabled = false;
             _output.Clear();
             _lastGroups = new List<CheckGroup>();
-            _hostsLinkStart = _hostsLinkEnd = -1;
+            _links.Clear();
+
+            // Network-dependent tabs short-circuit when the machine is offline: skip every
+            // check and show a single warning with a link to the Windows network settings.
+            if (_requiresNetwork && !NetworkStatus.IsAvailable())
+            {
+                _networkBlocked = true;
+                RenderNetworkWarning();
+                _status.Text = "Network not available";
+                HasRun = true;
+                _runButton.Enabled = true;
+                _running = false;
+                Severity = TabSeverity.Alert;
+                SeverityChanged?.Invoke();
+                if (_reportVerdict) Completed?.Invoke(CheckStatus.Fail);
+                return;
+            }
+            _networkBlocked = false;
+
             AppendLine($"{DateTime.Now:yyyy-MM-dd HH:mm:ss}", ColorInfo, FontStyle.Italic);
             AppendLine("");
 
@@ -203,20 +266,10 @@ namespace BrowseSafe
 
         private void RenderGroup(CheckGroup group)
         {
-            // The hosts section title carries an inline clickable "Open hosts folder" link.
-            if (group.Title.Contains("Hosts File", StringComparison.OrdinalIgnoreCase))
-            {
-                Append(group.Title, ColorText, FontStyle.Bold, 11f);
-                Append("      ", ColorInfo);
-                _hostsLinkStart = _output.TextLength;
-                Append("[ Open hosts folder ]", ColorLink, FontStyle.Underline, 9.5f);
-                _hostsLinkEnd = _output.TextLength;
-                AppendLine("");
-            }
-            else
-            {
-                AppendLine(group.Title, ColorText, FontStyle.Bold, 11f);
-            }
+            // The heading carries an optional inline "open the relevant control panel" link.
+            Append(group.Title, ColorText, FontStyle.Bold, 11f);
+            AppendSectionLink(group.Title);
+            AppendLine("");
             AppendLine(new string('─', 60), ColorInfo);
 
             foreach (var r in group.Results)
@@ -257,7 +310,7 @@ namespace BrowseSafe
             _output.SelectionStart = _output.TextLength;
             _output.SelectionLength = 0;
             _output.SelectionColor = color;
-            _output.SelectionFont = new Font("Consolas", size, style);
+            _output.SelectionFont = Theme.Scaled("Consolas", size, style);
             _output.AppendText(text);
             _output.SelectionColor = _output.ForeColor;
         }
@@ -267,26 +320,87 @@ namespace BrowseSafe
 
         private void AppendLine(string text) => AppendLine(text, _output.ForeColor);
 
-        // ---- Inline hosts-folder link ----
-        private bool IsOverHostsLink(Point p)
+        /// <summary>The offline warning shown (in place of any checks) by network-dependent tabs.</summary>
+        private void RenderNetworkWarning()
         {
-            if (_hostsLinkStart < 0 || _hostsLinkEnd <= _hostsLinkStart) return false;
-            Point a = _output.GetPositionFromCharIndex(_hostsLinkStart);
-            Point b = _output.GetPositionFromCharIndex(_hostsLinkEnd);
+            AppendLine("");
+            AppendLine("  Network not available, unable to perform requested checks",
+                ColorFail, FontStyle.Bold, 13f);
+            AppendLine("");
+            AppendLine("  Airplane mode may be on, or no network adapter is connected.", ColorInfo, FontStyle.Regular, 11f);
+            AppendLine("");
+            Append("  ", ColorInfo);
+            AppendLink("[ Open network settings ]", NetworkStatus.OpenSettings, 11f);
+            AppendLine("");
+        }
+
+        /// <summary>Appends the inline action link for a section heading, if one is mapped.</summary>
+        private void AppendSectionLink(string title)
+        {
+            // Hosts File opens a folder (and selects the file), not a settings URI.
+            if (title.Contains("Hosts File", StringComparison.OrdinalIgnoreCase))
+            {
+                Append("      ", ColorInfo);
+                AppendLink("[ Open hosts folder ]", OpenHostsFolder);
+                return;
+            }
+            // A section may map to more than one link (e.g. section 11 offers both
+            // Device Manager and Apps); append every match, spaced apart.
+            foreach (var (match, label, uri) in SectionLinks)
+            {
+                if (title.Contains(match, StringComparison.OrdinalIgnoreCase))
+                {
+                    Append("      ", ColorInfo);
+                    AppendLink(label, () => OpenUri(uri));
+                }
+            }
+        }
+
+        // ---- Inline clickable links ----
+        /// <summary>Appends underlined link text and records its char range + action.</summary>
+        private void AppendLink(string text, Action onClick, float size = 9.5f)
+        {
+            int start = _output.TextLength;
+            Append(text, ColorLink, FontStyle.Underline, size);
+            _links.Add(new LinkRegion { Start = start, End = _output.TextLength, OnClick = onClick });
+        }
+
+        private bool IsOverLink(Point p, int start, int end)
+        {
+            if (start < 0 || end <= start) return false;
+            Point a = _output.GetPositionFromCharIndex(start);
+            Point b = _output.GetPositionFromCharIndex(end);
             if (b.Y < a.Y) return false;
             int h = (int)Math.Ceiling(_output.Font.GetHeight()) + 4;
             var rect = new Rectangle(a.X, a.Y, Math.Max(1, b.X - a.X), h);
             return rect.Contains(p);
         }
 
+        private LinkRegion? LinkAt(Point p)
+        {
+            foreach (var lk in _links)
+                if (IsOverLink(p, lk.Start, lk.End)) return lk;
+            return null;
+        }
+
         private void Output_MouseDown(object? sender, MouseEventArgs e)
         {
-            if (e.Button == MouseButtons.Left && IsOverHostsLink(e.Location))
-                OpenHostsFolder();
+            if (e.Button == MouseButtons.Left) LinkAt(e.Location)?.OnClick();
         }
 
         private void Output_MouseMove(object? sender, MouseEventArgs e)
-            => _output.Cursor = IsOverHostsLink(e.Location) ? Cursors.Hand : Cursors.IBeam;
+            => _output.Cursor = LinkAt(e.Location) != null ? Cursors.Hand : Cursors.IBeam;
+
+        /// <summary>Opens a settings URI / control panel (e.g. ms-settings:, windowsdefender:, ncpa.cpl).</summary>
+        private void OpenUri(string uri)
+        {
+            try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, $"Could not open '{uri}': {ex.Message}",
+                    "Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
 
         private void OpenHostsFolder()
         {

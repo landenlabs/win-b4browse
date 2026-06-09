@@ -1,0 +1,16 @@
+ Windows Search Indexer Databases
+ 
+ Windows 11 relies on three core SQLite databases to manage its system index.
+ If a user browses files, saves documents from the web, or unzips items, the Search Indexer catalogues them.  
+ Paths:
+ %PROGRAMDATA%\Microsoft\Search\Data\Applications\Windows\Windows-gather.db 
+ (Contains general file/folder structures)
+ 
+ %PROGRAMDATA%\Microsoft\Search\Data\Applications\Windows\Windows.db 
+ (Stores file metadata)
+ 
+ 
+ Why it matters for your tool: The SystemIndex_Gthr table maps file names to their parental
+ file structures.Diagnostic Value: You can query these databases to reconstruct recent file 
+ downloads or search queries without having to walk the entire physical Master File Table (MFT) 
+ of the drive, which speeds up your script's execution.

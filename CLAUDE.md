@@ -23,8 +23,9 @@ BrowseSafe.exe --run events --out events.txt   # also write report to a file
 ```
 
 Scopes: `scan, dns, arp, patches, chrome, services, processes, startup, installed,
-devices, winext, events, activity, firewall, restores, all` (the catalog in `Reports.cs` is the
-source of truth). `events` needs Administrator to read the Security log.
+devices, winext, events, activity, downloads, firewall, restores, all` (the catalog in `Reports.cs`
+is the source of truth). `events` needs Administrator to read the Security log; `downloads` needs
+Administrator to read the SRUM database.
 
 `install.bat` publishes a self-contained single-file exe (`win-x64`) and copies it to
 `c:\opt\bin`. All runtime assets (icon, brand images, links page) are embedded, so the
@@ -80,13 +81,14 @@ The whole app is built on one small data model and a central catalog:
 | `SafetyChecks.Firewall.cs` | Firewall state + rules |
 | `SafetyChecks.Events.cs` | Windows Event Log entries |
 | `SafetyChecks.Activity.cs` | App launch counts (Windows Search `AppsIndex.db`) + PCA last-run merge |
+| `SafetyChecks.Sru.cs` | Per-app network bytes sent/received from SRUM (`SRUDB.dat`, via esentutl + ManagedEsent) — the Downloads tab |
 | `SafetyChecks.Restore.cs` | System Restore points |
 
 ### Row model / DTO classes
 One small record-like class per item type, consumed by the grids:
 `AppActivity`, `ArpEntry`, `ChromeExtension`, `DeviceDriver`, `DnsCacheEntry`, `EventItem`,
 `FirewallRule`, `InstalledProgram`, `ProcessItem`, `RestorePoint`, `ServiceInfo`,
-`ShellExtension`, `StartupItem`.
+`ShellExtension`, `SruNetUsage`, `StartupItem`.
 
 ### Helpers
 - `Elevation.cs` — admin/elevation detection.
@@ -110,6 +112,7 @@ Version lives in several places; **do not hand-edit them individually**.
 - Each check is self-contained and exception-isolated — a failing check returns a
   `Fail` result rather than throwing across the report.
 - Headless progress goes to **stderr**, the report to **stdout** (so stdout stays clean).
-- Dependencies: `System.Management` (WMI) and `Microsoft.Data.Sqlite` (reads the Windows
+- Dependencies: `System.Management` (WMI), `Microsoft.Data.Sqlite` (reads the Windows
   Search `AppsIndex.db` for the Activity tab; its bundled native SQLite supplies the FTS5
-  module that database needs) are the only NuGet packages.
+  module that database needs), and `ManagedEsent` (reads the SRUM ESE database `SRUDB.dat`
+  for the Downloads tab) are the only NuGet packages.

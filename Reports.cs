@@ -37,6 +37,7 @@ namespace BrowseSafe
             ("events",    "Event Log", new Func<CheckGroup>[] { SafetyChecks.CheckEventLog }),
             ("awake",     "Awake Periods", new Func<CheckGroup>[] { SafetyChecks.CheckAwake }),
             ("activity",  "App Activity", new Func<CheckGroup>[] { SafetyChecks.CheckActivity }),
+            ("downloads", "Downloads", new Func<CheckGroup>[] { SafetyChecks.DownloadsHeader, SafetyChecks.CheckDownloads }),
             ("rootca",    "Root CAs", new Func<CheckGroup>[] { SafetyChecks.CheckRootCAs }),
             ("firewall",  "Firewall", new Func<CheckGroup>[] { SafetyChecks.CheckFirewall, SafetyChecks.CheckFirewallRules }),
             ("restores",  "Restore Points", new Func<CheckGroup>[] { SafetyChecks.CheckRestore }),

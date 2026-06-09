@@ -329,6 +329,43 @@ namespace BrowseSafe
             "the web for the app.\n" +
             "\n" + Common);
 
+        public static readonly HelpInfo Downloads = new("App Network Usage (Downloads)",
+            "# What this shows\n" +
+            "How many bytes each application has received (downloaded) and sent (uploaded), read from " +
+            "Windows' System Resource Usage Monitor (SRUM). Windows logs, per process and roughly hourly, " +
+            "the network bytes each app moved; this tab sums those intervals per application over SRUM's " +
+            "retention window (about 30-60 days). It answers \"what has been pulling data down, and what " +
+            "has been sending it out\" - a high Uploaded total from an unexpected process is a possible " +
+            "data-exfiltration signal.\n" +
+            "\n" +
+            "# Requires administrator\n" +
+            "The SRUM database (C:\\Windows\\System32\\sru\\SRUDB.dat) lives under System32 and is held open " +
+            "by the Diagnostic Policy Service, so this tab is empty unless Browse Safe is run as " +
+            "administrator. The live database is never touched: it is snapshotted to a temp copy with " +
+            "esentutl, the throwaway copy is repaired if it was in a dirty-shutdown state, and only that " +
+            "copy is read.\n" +
+            "\n" +
+            "# Columns\n" +
+            "- Downloaded - bytes the app received (default sort, largest first).\n" +
+            "- Uploaded - bytes the app sent.\n" +
+            "- Last seen - the newest interval recorded for the app.\n" +
+            "- App name / App path - the executable, resolved from SRUM's id-map (sometimes a service tag " +
+            "or SID for system rows).\n" +
+            "\n" +
+            "# Status\n" +
+            "- Review - the app runs from a transient folder (Temp / Downloads), where installed software " +
+            "does not normally live, and has network activity - verify it is expected.\n" +
+            "- OK     - nothing unusual.\n" +
+            "\n" +
+            "# Note\n" +
+            "Totals are cumulative over SRUM's window, not a live rate. If SRUDB.dat is absent (SRUM " +
+            "disabled) or esentutl is unavailable the tab is empty, with the reason shown in the header.\n" +
+            "\n" +
+            "# Special actions\n" +
+            "- Right-click a row to open the file location, copy the name / path / usage, or search the web " +
+            "for the app.\n" +
+            "\n" + Common);
+
         public static readonly HelpInfo RootCerts = new("Trusted Root CAs",
             "# What this shows\n" +
             "The certificates in your trusted-root stores (Local Machine + Current User). A root CA is " +

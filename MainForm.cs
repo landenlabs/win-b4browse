@@ -293,6 +293,7 @@ namespace BrowseSafe
             AddViewTab("Events", "events", TabViews.BuildEvents());
             AddViewTab("Awake", "awake", TabViews.BuildAwake());
             AddViewTab("Activity", "activity", TabViews.BuildActivity());
+            AddViewTab("Downloads", "downloads", TabViews.BuildDownloads());
             AddViewTab("Root CAs", "rootca", TabViews.BuildRootCerts());
             AddViewTab("Firewall", "firewall", TabViews.BuildFirewall());
             if (Elevation.IsAdmin)
@@ -533,6 +534,7 @@ namespace BrowseSafe
             ["events"] = "Recent system & security events",
             ["awake"] = "Recent awake / sleep periods",
             ["activity"] = "App launch activity",
+            ["downloads"] = "Per-app network usage (downloads)",
             ["rootca"] = "Trusted root certificate authorities",
             ["firewall"] = "Windows Firewall configuration",
             ["restores"] = "System Restore points",

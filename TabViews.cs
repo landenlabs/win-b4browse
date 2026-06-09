@@ -1088,6 +1088,75 @@ namespace BrowseSafe
             menu.Show(Cursor.Position);
         }
 
+        // ---- Downloads (SRUM per-app network usage) ---------------------- //
+        public static Control BuildDownloads()
+        {
+            SortableGrid grid = null!;
+            var cols = new[]
+            {
+                new GridColumn { Header = "Status", Width = 80,
+                    Text = o => ((SruNetUsage)o).Risk >= TabSeverity.Caution ? "Review" : "OK",
+                    Sort = o => (int)((SruNetUsage)o).Risk,
+                    Style = o => ((SruNetUsage)o).Risk >= TabSeverity.Caution ? ((Color, Color)?)(YelBack, YelFore) : null },
+                new GridColumn { Header = "Downloaded", Width = 110,
+                    Text = o => SafetyChecks.FormatBytes(((SruNetUsage)o).BytesRecvd),
+                    Sort = o => ((SruNetUsage)o).BytesRecvd },
+                new GridColumn { Header = "Uploaded", Width = 110,
+                    Text = o => SafetyChecks.FormatBytes(((SruNetUsage)o).BytesSent),
+                    Sort = o => ((SruNetUsage)o).BytesSent },
+                new GridColumn { Header = "Last seen", Width = 130,
+                    Text = o => ((SruNetUsage)o).LastSeenText,
+                    Sort = o => ((SruNetUsage)o).LastSeen ?? DateTime.MinValue },
+                new GridColumn { Header = "App name", Fill = 140, Text = o => ((SruNetUsage)o).AppName },
+                new GridColumn { Header = "App path", Fill = 220,
+                    Text = o => ((SruNetUsage)o).AppPath,
+                    FilterKind = ColumnFilterKind.Regex },
+            };
+
+            grid = new SortableGrid("Refresh",
+                () => SafetyChecks.GetDownloadUsage().Cast<object>().ToList(),
+                cols, defaultSortColumn: 1, defaultAscending: false,   // heaviest download first
+                help: TabHelp.Downloads,
+                summary: () =>
+                {
+                    var items = SafetyChecks.GetDownloadUsage();
+                    if (items.Count == 0) return SafetyChecks.SruStatus;
+                    int flagged = items.Count(u => u.Risk >= TabSeverity.Caution);
+                    if (flagged > 0) return $"{flagged} from a transient folder";
+                    return $"top: {items[0].AppName} ({SafetyChecks.FormatBytes(items[0].BytesRecvd)} down)";
+                },
+                severity: items =>
+                {
+                    var s = TabSeverity.None;
+                    foreach (var o in items)
+                        if (o is SruNetUsage u) s = Sev.Max(s, u.Risk);
+                    return s;
+                },
+                onRowContext: o => ShowDownloadsMenu(grid, (SruNetUsage)o));
+            return grid;
+        }
+
+        private static void ShowDownloadsMenu(Control owner, SruNetUsage u)
+        {
+            bool hasFile = u.AppPath.Length > 0 && File.Exists(u.AppPath);
+
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Open file location", null,
+                (_, _) => OpenLocation(owner, u.AppPath, Path.GetDirectoryName(u.AppPath) ?? ""))
+                .Enabled = hasFile;
+            menu.Items.Add("Copy app name", null, (_, _) => { try { Clipboard.SetText(u.AppName); } catch { } });
+            menu.Items.Add("Copy app path", null, (_, _) => { try { Clipboard.SetText(u.AppPath); } catch { } });
+            menu.Items.Add("Copy usage (down / up)", null, (_, _) =>
+            {
+                try { Clipboard.SetText($"down {SafetyChecks.FormatBytes(u.BytesRecvd)} / up {SafetyChecks.FormatBytes(u.BytesSent)}"); }
+                catch { }
+            });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Search the web for this app", null, (_, _) =>
+                OpenBrowser("https://www.google.com/search?q=" + HttpUtility.UrlEncode(u.AppName)));
+            menu.Show(Cursor.Position);
+        }
+
         // ---- Root CAs ---------------------------------------------------- //
         public static Control BuildRootCerts()
         {

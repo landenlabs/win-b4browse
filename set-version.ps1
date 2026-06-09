@@ -126,6 +126,13 @@ if ((git tag -l $tag) -eq $tag) {
 # NOT remove it, so a CI step like `gh release create` would fail on the
 # duplicate. Remote cleanup is best-effort and needs an authenticated `gh`.
 if ($Force) {
+    # Best-effort remote cleanup. gh/git below legitimately write to stderr and
+    # may exit non-zero (e.g. "release not found"); under ErrorActionPreference=
+    # Stop with 2>&1 that aborts the script. Run this block under Continue so only
+    # the explicit $LASTEXITCODE checks decide control flow; restored at block end.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+
     function Test-GhReady {
         if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return $false }
         & gh auth status 2>&1 | Out-Null
@@ -165,6 +172,8 @@ if ($Force) {
     # Delete the remote tag so the re-push registers as a clean tag-create event.
     Write-Host "Deleting: remote tag $tag (if present)"
     git push origin ":refs/tags/$tag" 2>&1 | ForEach-Object { Write-Host $_ }
+
+    $ErrorActionPreference = $prevEAP
 }
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -221,34 +230,13 @@ if (Test-Path $readme) {
     } "README.md  (version=$tag  date=$date)"
 }
 
-# ── 3. C#: <Version> (and <Copyright> year) in any .csproj ───────────────────
+# ── 3. C#: <Version> in any .csproj ──────────────────────────────────────────
 foreach ($f in Get-RepoFiles '*.csproj') {
     $text = (Read-Utf8 $f.FullName).Text
     if ($text -match '<Version>[^<]*</Version>') {
         Edit-Utf8 $f.FullName {
-            param($t)
-            $t = [regex]::Replace($t, '<Version>[^<]*</Version>', "<Version>$ver</Version>")
-            # Keep the year inside <Copyright>...</Copyright> current (e.g. "LanDen Labs (2026)").
-            $t = [regex]::Replace($t, '(<Copyright>[^<]*?)\d{4}([^<]*</Copyright>)', "`${1}$year`${2}")
-            $t
+            param($t) [regex]::Replace($t, '<Version>[^<]*</Version>', "<Version>$ver</Version>")
         } "$($f.Name)  (<Version>$ver</Version>)"
-    }
-}
-
-# ── 3b. C#: Version / BuildDate / Copyright constants in AUTO-VERSION sources ──
-# Any .cs file containing the literal marker "AUTO-VERSION" has its app-metadata
-# constants rewritten (see AppInfo.cs). The marker scopes the edit so an unrelated
-# `const string Version` elsewhere in the codebase is never touched.
-foreach ($f in Get-RepoFiles '*.cs') {
-    $text = (Read-Utf8 $f.FullName).Text
-    if ($text -match 'AUTO-VERSION') {
-        Edit-Utf8 $f.FullName {
-            param($t)
-            $t = [regex]::Replace($t, '(const\s+string\s+Version\s*=\s*")[^"]*(")',   "`${1}$ver`${2}")
-            $t = [regex]::Replace($t, '(const\s+string\s+BuildDate\s*=\s*")[^"]*(")', "`${1}$date`${2}")
-            $t = [regex]::Replace($t, '(const\s+string\s+Copyright\s*=\s*"[^"]*?)\d{4}([^"]*")', "`${1}$year`${2}")
-            $t
-        } "$($f.Name)  (Version=$ver  BuildDate=$date  (c)$year)"
     }
 }
 
@@ -314,7 +302,18 @@ foreach ($f in Get-RepoFiles '*.rc') {
 # by ErrorActionPreference=Stop; fail only on a non-zero exit code.
 function Invoke-Git {
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$GitArgs)
-    & git @GitArgs 2>&1 | ForEach-Object { Write-Host $_ }
+    # git writes warnings (e.g. "LF will be replaced by CRLF") to stderr. Under
+    # ErrorActionPreference=Stop, merging stderr with 2>&1 turns each such line
+    # into a terminating NativeCommandError even when git exits 0. Run the native
+    # call under Continue so ONLY a non-zero exit code is treated as failure.
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & git @GitArgs 2>&1 | ForEach-Object { Write-Host $_ }
+    }
+    finally {
+        $ErrorActionPreference = $prevEAP
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Error ("git " + ($GitArgs -join ' ') + " failed (exit $LASTEXITCODE)")
         exit 1
@@ -322,7 +321,10 @@ function Invoke-Git {
 }
 
 Write-Host ''
-Invoke-Git @(@('add', '--') + $changed)
+# Splat the add args (@var splats; @(...) would pass the array as ONE argument,
+# which [string[]] then stringifies into a single mangled "add -- path" token).
+$addArgs = @('add', '--') + $changed
+Invoke-Git @addArgs
 Invoke-Git commit -m $Message
 Invoke-Git tag -a $tag -m $Message
 Write-Host "Tagged  : $tag"

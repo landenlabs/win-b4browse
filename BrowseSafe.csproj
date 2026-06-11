@@ -10,7 +10,7 @@
     <AssemblyName>BrowseSafe</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>icon.ico</ApplicationIcon>
-    <Version>6.06.07</Version>
+    <Version>6.06.08</Version>
     <Copyright>LanDen Labs (2026)</Copyright>
     <!-- targeted runtime identifiers for publishing self-contained or RID-specific assets -->
     <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>

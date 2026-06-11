@@ -1298,6 +1298,88 @@ namespace BrowseSafe
             menu.Show(Cursor.Position);
         }
 
+        // ---- Virus (Defender protection state + threat / scan timeline) -- //
+        public static Control BuildVirus()
+        {
+            SortableGrid grid = null!;
+            var cols = new[]
+            {
+                new GridColumn { Header = "Result", Width = 120,
+                    Text = o => ((DefenderTimelineRow)o).Result,
+                    Sort = o => (int)((DefenderTimelineRow)o).Severity,
+                    Style = o => SeverityStyle(((DefenderTimelineRow)o).Severity) },
+                new GridColumn { Header = "Time", Width = 130,
+                    Text = o => ((DefenderTimelineRow)o).TimeText,
+                    Sort = o => ((DefenderTimelineRow)o).TimeSort },
+                new GridColumn { Header = "Type", Width = 70,
+                    Text = o => ((DefenderTimelineRow)o).KindText,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Event", Width = 60,
+                    Text = o => ((DefenderTimelineRow)o).EventId.ToString(),
+                    Sort = o => ((DefenderTimelineRow)o).EventId },
+                new GridColumn { Header = "Name", Fill = 150,
+                    Text = o => ((DefenderTimelineRow)o).Title,
+                    FilterKind = ColumnFilterKind.Regex },
+                new GridColumn { Header = "Detail", Fill = 240,
+                    Text = o => ((DefenderTimelineRow)o).Detail,
+                    FilterKind = ColumnFilterKind.Regex },
+            };
+
+            grid = new SortableGrid("Refresh",
+                () => SafetyChecks.GetDefenderTimeline().Cast<object>().ToList(),
+                cols, defaultSortColumn: 1, defaultAscending: false,   // newest first
+                headerInfo: SafetyChecks.VirusHeader,
+                help: TabHelp.Virus,
+                extraButtons: new (string, Action)[] { ("Windows Security", () => StartShell(grid, "windowsdefender:")) },
+                summary: () =>
+                {
+                    if (!Elevation.IsAdmin) return "run as Admin for history";
+                    var rows = SafetyChecks.GetDefenderTimeline();
+                    int threats = rows.Count(r => ((DefenderTimelineRow)r).Kind == DefenderEventKind.Threat);
+                    int scans = rows.Count - threats;
+                    return threats > 0 ? $"{threats} threat(s), {scans} scan(s)" : $"no threats, {scans} scan(s)";
+                },
+                severity: items =>
+                {
+                    var s = SafetyChecks.DefenderStatusSeverity();   // protection state colours the tab too
+                    foreach (var o in items)
+                        if (o is DefenderTimelineRow r) s = Sev.Max(s, r.Severity);
+                    return s;
+                },
+                onRowContext: o => ShowVirusMenu(grid, (DefenderTimelineRow)o),
+                headerHeight: 172);
+            return grid;
+        }
+
+        private static void ShowVirusMenu(Control owner, DefenderTimelineRow row)
+        {
+            var menu = new ContextMenuStrip();
+
+            if (row.Kind == DefenderEventKind.Threat)
+            {
+                menu.Items.Add("Copy threat name", null, (_, _) => { try { Clipboard.SetText(row.Title); } catch { } });
+                bool hasPath = row.Path.Length > 0;
+                menu.Items.Add(new ToolStripMenuItem("Open file location", null,
+                    (_, _) => OpenLocation(owner, File.Exists(row.Path) ? row.Path : "",
+                                           Path.GetDirectoryName(row.Path) ?? "")) { Enabled = hasPath });
+                menu.Items.Add(new ToolStripMenuItem("Copy file path", null,
+                    (_, _) => { try { Clipboard.SetText(row.Path); } catch { } }) { Enabled = hasPath });
+                menu.Items.Add(new ToolStripSeparator());
+                menu.Items.Add("Search the web for this threat", null, (_, _) =>
+                    OpenBrowser("https://www.google.com/search?q=" +
+                                HttpUtility.UrlEncode(row.Title + " malware")));
+                menu.Items.Add(new ToolStripSeparator());
+            }
+
+            menu.Items.Add("Copy row", null, (_, _) =>
+            {
+                try { Clipboard.SetText($"{row.TimeText}\t{row.KindText}\t#{row.EventId}\t{row.Result}\t{row.Title}\t{row.Detail}"); }
+                catch { }
+            });
+            menu.Items.Add("Open Windows Security", null, (_, _) => StartShell(owner, "windowsdefender:"));
+            menu.Show(Cursor.Position);
+        }
+
         // ---- Root CAs ---------------------------------------------------- //
         public static Control BuildRootCerts()
         {

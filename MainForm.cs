@@ -297,6 +297,7 @@ namespace BrowseSafe
             AddViewTab("Downloads", "downloads", TabViews.BuildDownloads());
             AddViewTab("Root CAs", "rootca", TabViews.BuildRootCerts());
             AddViewTab("Firewall", "firewall", TabViews.BuildFirewall());
+            AddViewTab("Virus", "virus", TabViews.BuildVirus());
             if (Elevation.IsAdmin)
                 AddViewTab("Restores", "restores", TabViews.BuildRestores());
 

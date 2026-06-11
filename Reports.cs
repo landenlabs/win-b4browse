@@ -41,6 +41,7 @@ namespace BrowseSafe
             ("downloads", "Downloads", new Func<CheckGroup>[] { SafetyChecks.DownloadsHeader, SafetyChecks.CheckDownloads }),
             ("rootca",    "Root CAs", new Func<CheckGroup>[] { SafetyChecks.CheckRootCAs }),
             ("firewall",  "Firewall", new Func<CheckGroup>[] { SafetyChecks.CheckFirewall, SafetyChecks.CheckFirewallRules }),
+            ("virus",     "Virus", new Func<CheckGroup>[] { SafetyChecks.VirusHeader, SafetyChecks.CheckVirus }),
             ("restores",  "Restore Points", new Func<CheckGroup>[] { SafetyChecks.CheckRestore }),
         };
 

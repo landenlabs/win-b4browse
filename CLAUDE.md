@@ -23,9 +23,10 @@ BrowseSafe.exe --run events --out events.txt   # also write report to a file
 ```
 
 Scopes: `scan, dns, arp, patches, chrome, settings, services, processes, startup, installed,
-devices, winext, events, activity, downloads, firewall, restores, all` (the catalog in `Reports.cs`
-is the source of truth). `events` needs Administrator to read the Security log; `downloads` needs
-Administrator to read the SRUM database.
+devices, winext, events, activity, downloads, firewall, virus, restores, all` (the catalog in
+`Reports.cs` is the source of truth). `events` needs Administrator to read the Security log;
+`downloads` needs Administrator to read the SRUM database; `virus` reads protection state without
+elevation but needs Administrator for the Defender threat/scan history (the event log).
 
 `install.bat` publishes a self-contained single-file exe (`win-x64`) and copies it to
 `c:\opt\bin`. All runtime assets (icon, brand images, links page) are embedded, so the
@@ -83,6 +84,7 @@ The whole app is built on one small data model and a central catalog:
 | `SafetyChecks.Events.cs` | Windows Event Log entries |
 | `SafetyChecks.Activity.cs` | App launch counts (Windows Search `AppsIndex.db`) + PCA last-run merge |
 | `SafetyChecks.Sru.cs` | Per-app network bytes sent/received from SRUM (`SRUDB.dat`, via esentutl + ManagedEsent) — the Downloads tab |
+| `SafetyChecks.Defender.cs` | Defender protection state (WMI `MSFT_MpComputerStatus`) + threat/scan history (Defender Operational event log) — the Virus tab |
 | `SafetyChecks.Restore.cs` | System Restore points |
 
 ### Row model / DTO classes
@@ -90,7 +92,9 @@ One small record-like class per item type, consumed by the grids:
 `AppActivity`, `ArpEntry`, `ChromeExtension`, `DeviceDriver`, `DnsCacheEntry`, `EventItem`,
 `FirewallRule`, `InstalledProgram`, `ProcessItem`, `RestorePoint`, `ServiceInfo`,
 `ShellExtension`, `SruNetUsage`, `StartupItem`. The Settings tab uses a small matrix model
-instead (`ChromeSettingsMatrix.cs`: `ChromeSettingsMatrix` / `SettingRow` / `ColumnDef`).
+instead (`ChromeSettingsMatrix.cs`: `ChromeSettingsMatrix` / `SettingRow` / `ColumnDef`). The
+Virus tab uses `DefenderModels.cs`: `DefenderStatusSummary` (WMI state), `ThreatDetectionRecord` /
+`ScanHistoryRecord` (parsed events), and `DefenderTimelineRow` (the merged grid row).
 
 ### Helpers
 - `Elevation.cs` — admin/elevation detection.

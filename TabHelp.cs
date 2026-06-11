@@ -37,6 +37,38 @@ namespace BrowseSafe
             "- Run Safety Checks - runs every check; groups render as each completes.\n" +
             "- In the Hosts File section, click [ Open hosts folder ] to reveal the hosts file in Explorer.\n");
 
+        public static readonly HelpInfo Virus = new("Virus Protection",
+            "# What this shows\n" +
+            "A summary of Microsoft Defender's state and history. The status lines above the table report " +
+            "the live protection state, signature (definition) version and age, and the last quick/full " +
+            "scan times - read from WMI (MSFT_MpComputerStatus). The table below is a merged timeline of " +
+            "threats Defender found and scans it ran, read from the Defender Operational event log.\n" +
+            "\n" +
+            "# Status lines\n" +
+            "- Antivirus / Real-time protection - the core on/off state; either being OFF turns the tab red.\n" +
+            "- Behavior monitoring / Tamper protection / Cloud-delivered protection - extra defences; off is " +
+            "flagged yellow.\n" +
+            "- Signatures - definition version and how many days old; older than 7 days is flagged yellow.\n" +
+            "- Last quick / full scan - when each last finished; a quick scan older than 14 days is flagged.\n" +
+            "\n" +
+            "# The table\n" +
+            "One row per Defender event, newest first. The Type column (filterable) is either:\n" +
+            "- Threat - something Defender detected. Event 1116 = detected, 1117 = remediated, 1118 = " +
+            "remediation FAILED (red). The Name is the threat, Detail is the action and file path.\n" +
+            "- Scan - a scan Defender ran. 1001 = completed, 1005 = failed (yellow), 1002 = canceled, " +
+            "1000 = started.\n" +
+            "\n" +
+            "# Administrator\n" +
+            "The protection-status lines read without elevation, but the Defender Operational event log " +
+            "(the threat/scan table) is readable only by an administrator. Without elevation the status " +
+            "lines still appear and the table is empty - use the left-panel \"Run as Admin\" to see history.\n" +
+            "\n" +
+            "# Special actions\n" +
+            "- Windows Security - opens the Windows Security app (to run a scan or change settings).\n" +
+            "- Right-click a threat row - copy its name or path, open the file location, or search the web " +
+            "for the threat name.\n" +
+            "\n" + Common);
+
         public static readonly HelpInfo Patches = new("Windows Patches",
             "# What this shows\n" +
             "Installed Windows updates and hotfixes reported by WMI (Win32_QuickFixEngineering), newest first.\n" +

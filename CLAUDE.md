@@ -22,7 +22,7 @@ BrowseSafe.exe --inventory         # alias for --run all
 BrowseSafe.exe --run events --out events.txt   # also write report to a file
 ```
 
-Scopes: `scan, dns, arp, patches, chrome, services, processes, startup, installed,
+Scopes: `scan, dns, arp, patches, chrome, settings, services, processes, startup, installed,
 devices, winext, events, activity, downloads, firewall, restores, all` (the catalog in `Reports.cs`
 is the source of truth). `events` needs Administrator to read the Security log; `downloads` needs
 Administrator to read the SRUM database.
@@ -38,7 +38,7 @@ The whole app is built on one small data model and a central catalog:
 - **`CheckResult.cs`** — the model. `CheckStatus` enum (`Pass/Warn/Fail/Info`),
   `CheckResult` (one line: status + name + detail, or a pre-formatted `Table` row), and
   `CheckGroup` (a titled list of results; `Worst()` rolls up severity, table rows excluded).
-- **`SafetyChecks`** — all diagnostic logic, a `static partial class` split across 14
+- **`SafetyChecks`** — all diagnostic logic, a `static partial class` split across 15
   files (see below). Every public `CheckXxx()` method returns a populated `CheckGroup`
   and is safe to call from a background thread.
 - **`Reports.cs`** — central catalog mapping each scope key → its `Func<CheckGroup>[]`
@@ -75,6 +75,7 @@ The whole app is built on one small data model and a central catalog:
 | `SafetyChecks.DnsCache.cs` | Live resolver cache (`ipconfig /displaydns`) + flush |
 | `SafetyChecks.Arp.cs` | ARP cache |
 | `SafetyChecks.ChromePrefs.cs` | Chrome exe integrity, privacy prefs, extensions |
+| `SafetyChecks.ChromeSettings.cs` | Chrome settings matrix (settings × profiles + policy Global col) — the Settings tab |
 | `SafetyChecks.Inventory.cs` | Services, processes, startup, installed, devices (largest) |
 | `SafetyChecks.Winget.cs` | winget-sourced install metadata |
 | `SafetyChecks.WinExt.cs` | Shell / context-menu extensions |
@@ -88,7 +89,8 @@ The whole app is built on one small data model and a central catalog:
 One small record-like class per item type, consumed by the grids:
 `AppActivity`, `ArpEntry`, `ChromeExtension`, `DeviceDriver`, `DnsCacheEntry`, `EventItem`,
 `FirewallRule`, `InstalledProgram`, `ProcessItem`, `RestorePoint`, `ServiceInfo`,
-`ShellExtension`, `SruNetUsage`, `StartupItem`.
+`ShellExtension`, `SruNetUsage`, `StartupItem`. The Settings tab uses a small matrix model
+instead (`ChromeSettingsMatrix.cs`: `ChromeSettingsMatrix` / `SettingRow` / `ColumnDef`).
 
 ### Helpers
 - `Elevation.cs` — admin/elevation detection.
@@ -113,6 +115,7 @@ Version lives in several places; **do not hand-edit them individually**.
   `Fail` result rather than throwing across the report.
 - Headless progress goes to **stderr**, the report to **stdout** (so stdout stays clean).
 - Dependencies: `System.Management` (WMI), `Microsoft.Data.Sqlite` (reads the Windows
-  Search `AppsIndex.db` for the Activity tab; its bundled native SQLite supplies the FTS5
-  module that database needs), and `ManagedEsent` (reads the SRUM ESE database `SRUDB.dat`
-  for the Downloads tab) are the only NuGet packages.
+  Search `AppsIndex.db` for the Activity tab — its bundled native SQLite supplies the FTS5
+  module that database needs — and counts rows in Chrome's `Login Data` for the Settings
+  tab), and `ManagedEsent` (reads the SRUM ESE database `SRUDB.dat` for the Downloads tab)
+  are the only NuGet packages.

@@ -38,6 +38,8 @@ namespace BrowseSafe
 
             // Last-run times to merge in by executable path (empty when not running elevated).
             var lastRun = LoadPcaLaunchTimes();
+            // Paths consumed by an indexed app, so the leftovers can become their own rows below.
+            var matchedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             // Stage a private copy in Temp to avoid contending with Windows Search for the file.
             string temp = Path.Combine(Path.GetTempPath(), $"AppsIndex_bsafe_{Guid.NewGuid():N}.db");
@@ -81,6 +83,7 @@ namespace BrowseSafe
                     {
                         a.LastExecuted = when;
                         a.LastExecutedText = when.ToString("yyyy-MM-dd HH:mm");
+                        matchedPaths.Add(a.ResolvedPath);
                     }
                     ClassifyActivity(a);
                     list.Add(a);
@@ -93,6 +96,28 @@ namespace BrowseSafe
                 {
                     try { if (File.Exists(temp + ext)) File.Delete(temp + ext); } catch { /* best effort */ }
                 }
+            }
+
+            // PCA recorded a last-run time for an executable the app-usage index never tracked: the
+            // app ran but has no index row to merge into. Surface it anyway as its own row - we know
+            // the path and when it ran, but nothing else, so launch count is 1 and the index-only
+            // columns (Type / Rank) read "--".
+            foreach (var kv in lastRun)
+            {
+                if (matchedPaths.Contains(kv.Key)) continue;
+                var a = new AppActivity
+                {
+                    AppId = kv.Key,
+                    ResolvedPath = kv.Key,
+                    DisplayName = Path.GetFileName(kv.Key) is { Length: > 0 } name ? name : kv.Key,
+                    LaunchCount = 1,
+                    Kind = "--",
+                    LastExecuted = kv.Value,
+                    LastExecutedText = kv.Value.ToString("yyyy-MM-dd HH:mm"),
+                    IsLastRunOnly = true,
+                };
+                ClassifyActivity(a);
+                list.Add(a);
             }
             return list;
         }

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 LanDen Labs - Dennis Lang
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
@@ -41,8 +42,10 @@ namespace BrowseSafe
 
         /// <summary>Shows a theme-aware, modeless, resizable dialog describing a tab. Modeless so it
         /// never blocks the tab or main window - the user can keep working with Help left open.
+        /// When <paramref name="anchor"/> matches a "## " sub-heading in the body, the view opens
+        /// scrolled to that heading (used by the Settings tab's "Explain this setting" menu).
         /// Returns the dialog so the caller can react to it closing (e.g. re-enable its button).</summary>
-        public static Form Show(IWin32Window? owner, HelpInfo info)
+        public static Form Show(IWin32Window? owner, HelpInfo info, string? anchor = null)
         {
             var dlg = new Form
             {
@@ -104,7 +107,7 @@ namespace BrowseSafe
             dlg.AcceptButton = close;
             dlg.CancelButton = close;          // Esc closes
 
-            RenderBody(body, info);
+            var anchors = RenderBody(body, info);
             // Force the bottom panel to lay out the Close button at its initial size.
             close.Left = bottom.ClientSize.Width - close.Width - 12;
             close.Top = (bottom.ClientSize.Height - close.Height) / 2;
@@ -122,12 +125,24 @@ namespace BrowseSafe
                     o.Top + (o.Height - dlg.Height) / 2);
             }
             dlg.Show();
+
+            // Scroll to the requested setting's sub-heading, if any. Done after Show() so the
+            // RichTextBox has its final layout and ScrollToCaret lands on the right line.
+            if (!string.IsNullOrEmpty(anchor) && anchors.TryGetValue(anchor, out int pos))
+            {
+                body.SelectionStart = pos;
+                body.SelectionLength = 0;
+                body.ScrollToCaret();
+            }
             return dlg;
         }
 
         // ---- Light markup renderer --------------------------------------- //
-        private static void RenderBody(RichTextBox rtb, HelpInfo info)
+        /// <summary>Renders the body and returns the start offset of each "## " sub-heading, keyed by
+        /// its text, so the caller can scroll the view to a named section.</summary>
+        private static Dictionary<string, int> RenderBody(RichTextBox rtb, HelpInfo info)
         {
+            var anchors = new Dictionary<string, int>(StringComparer.Ordinal);
             Color heading = Theme.Text;
             Color subtle = Theme.Subtle;
 
@@ -151,7 +166,11 @@ namespace BrowseSafe
                 if (line.StartsWith("# "))
                     Append(line.Substring(2) + "\n", heading, 11.5f, FontStyle.Bold);
                 else if (line.StartsWith("## "))
-                    Append(line.Substring(3) + "\n", heading, 10.5f, FontStyle.Bold);
+                {
+                    string sub = line.Substring(3);
+                    anchors[sub] = rtb.TextLength;   // start offset, before the heading is appended
+                    Append(sub + "\n", heading, 10.5f, FontStyle.Bold);
+                }
                 else if (line.StartsWith("- ") || line.StartsWith("• "))
                     Append("   •  " + line.Substring(2) + "\n", Theme.Text, 10f, FontStyle.Regular);
                 else
@@ -161,6 +180,7 @@ namespace BrowseSafe
             rtb.SelectionStart = 0;
             rtb.SelectionLength = 0;
             rtb.ScrollToCaret();
+            return anchors;
         }
     }
 }

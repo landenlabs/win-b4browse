@@ -647,6 +647,147 @@ namespace BrowseSafe
             return grid;
         }
 
+        // ---- Settings (Chrome settings matrix: settings x profiles) ------ //
+        public static Control BuildSettings()
+        {
+            // Columns are discovered once, synchronously, at construction (a cheap profile scan -
+            // no database reads). The grid is fixed thereafter; a profile added while the app runs
+            // won't get a column until restart (the loader can refresh row data, not columns).
+            var matrixCols = SafetyChecks.GetChromeSettingColumns();
+
+            var cols = new List<GridColumn>
+            {
+                new GridColumn { Header = "Category", Width = 150,
+                    Text = o => ((SettingRow)o).Category,
+                    Sort = o => SettingSortKey((SettingRow)o) },
+                new GridColumn { Header = "Setting", Width = 190,
+                    Text = o => ((SettingRow)o).Label,
+                    Sort = o => SettingSortKey((SettingRow)o) },
+            };
+            foreach (var col in matrixCols)
+            {
+                string key = col.Key;   // capture per column for the cell accessors
+                cols.Add(new GridColumn
+                {
+                    Header = col.Header,
+                    Width = col.IsGlobal ? 120 : 130,
+                    Text = o => ((SettingRow)o).Values.TryGetValue(key, out var v) ? v : "—",
+                    Style = o => SeverityStyle(((SettingRow)o).Risk.TryGetValue(key, out var r) ? r : TabSeverity.None),
+                });
+            }
+
+            // Last column: the chrome:// deep-link that opens Chrome to this setting's page.
+            // Clicking it launches chrome.exe and copies the URL (the grid's link handler
+            // routes chrome:// URIs through the same path the left-panel deep-links use).
+            cols.Add(new GridColumn
+            {
+                Header = "Open in Chrome", Width = 230, Link = true,
+                Text = o => ((SettingRow)o).Link,
+                Sort = o => ((SettingRow)o).Link,
+            });
+
+            SortableGrid grid = null!;
+            grid = new SortableGrid("Refresh",
+                () => SafetyChecks.GetChromeSettings().Rows.Cast<object>().ToList(),
+                cols.ToArray(), defaultSortColumn: 1, defaultAscending: true,   // grouped by category
+                help: TabHelp.Settings,
+                summary: () =>
+                {
+                    int profiles = SafetyChecks.GetChromeSettingColumns().Count(c => !c.IsGlobal);
+                    return profiles > 0 ? $"{profiles} profile(s)" : "no Chrome profiles";
+                },
+                severity: items =>
+                {
+                    var s = TabSeverity.None;
+                    foreach (var o in items)
+                        if (o is SettingRow r)
+                            foreach (var v in r.Risk.Values) s = Sev.Max(s, v);
+                    return s;
+                },
+                onRowContext: o => ShowSettingsMenu(grid, (SettingRow)o));
+            return grid;
+        }
+
+        /// <summary>Right-click menu for a Settings-tab row: explain the setting (offline doc + web
+        /// search), copy its chrome:// link, and open / locate the profile JSON files that back it.</summary>
+        private static void ShowSettingsMenu(Control owner, SettingRow row)
+        {
+            var menu = new ContextMenuStrip();
+
+            menu.Items.Add($"Explain “{row.Label}”…", null,
+                (_, _) => HelpUi.Show(owner.FindForm(), SettingsInfo.Help, anchor: row.Label));
+            menu.Items.Add($"Search the web for “{row.Label}”", null,
+                (_, _) => OpenBrowser("https://www.google.com/search?q=" +
+                                      HttpUtility.UrlEncode("Chrome setting " + row.Label)));
+
+            if (row.Link.Length > 0)
+            {
+                menu.Items.Add(new ToolStripSeparator());
+                menu.Items.Add($"Copy link  ({row.Link})", null,
+                    (_, _) => { try { Clipboard.SetText(row.Link); } catch { } });
+            }
+
+            // The backing files: every profile's Preferences / Secure Preferences JSON (the same
+            // files hold every setting row). One submenu per profile so multiple profiles stay tidy.
+            var profiles = SafetyChecks.GetChromeProfileDirs();
+            if (profiles.Count > 0)
+            {
+                menu.Items.Add(new ToolStripSeparator());
+                var filesHeader = new ToolStripMenuItem("Open settings file") { Enabled = false };
+                menu.Items.Add(filesHeader);
+                foreach (var (header, dir) in profiles)
+                    menu.Items.Add(BuildProfileFilesSubmenu(owner, header, dir));
+            }
+
+            menu.Show(Cursor.Position);
+        }
+
+        /// <summary>A per-profile submenu: open either JSON file in Notepad (they are extension-less,
+        /// so Notepad is the reliable way to view them), open the folder, or copy its path.</summary>
+        private static ToolStripMenuItem BuildProfileFilesSubmenu(Control owner, string header, string dir)
+        {
+            string prefs = Path.Combine(dir, "Preferences");
+            string secure = Path.Combine(dir, "Secure Preferences");
+            var sub = new ToolStripMenuItem(header);
+
+            var openPrefs = new ToolStripMenuItem("Open Preferences (Notepad)", null,
+                (_, _) => OpenInNotepad(owner, prefs)) { Enabled = File.Exists(prefs) };
+            var openSecure = new ToolStripMenuItem("Open Secure Preferences (Notepad)", null,
+                (_, _) => OpenInNotepad(owner, secure)) { Enabled = File.Exists(secure) };
+            sub.DropDownItems.Add(openPrefs);
+            sub.DropDownItems.Add(openSecure);
+            sub.DropDownItems.Add(new ToolStripSeparator());
+            sub.DropDownItems.Add("Open profile folder", null,
+                (_, _) => OpenLocation(owner, File.Exists(prefs) ? prefs : "", dir));
+            sub.DropDownItems.Add("Copy folder path", null,
+                (_, _) => { try { Clipboard.SetText(dir); } catch { } });
+            return sub;
+        }
+
+        /// <summary>Opens a (typically extension-less Chrome JSON) file in Notepad. Shell-opening these
+        /// files would prompt "how do you want to open" because they have no extension, so go straight
+        /// to Notepad, which renders the JSON as plain text.</summary>
+        private static void OpenInNotepad(Control owner, string path)
+        {
+            try { Process.Start(new ProcessStartInfo("notepad.exe", $"\"{path}\"") { UseShellExecute = true }); }
+            catch (Exception ex)
+            {
+                CopyableMessageBox.Show(owner.FindForm(), $"Could not open '{path}': {ex.Message}",
+                    "Chrome Settings", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        /// <summary>Composite sort key so the default sort groups rows by category, then setting.</summary>
+        private static string SettingSortKey(SettingRow r) => $"{r.CategoryOrder:D4}{r.Label}";
+
+        /// <summary>Maps a per-cell severity to a grid cell colour (red alert / yellow caution).</summary>
+        private static (Color Back, Color Fore)? SeverityStyle(TabSeverity s) => s switch
+        {
+            TabSeverity.Alert => (RedBack, RedFore),
+            TabSeverity.Caution => (YelBack, YelFore),
+            _ => null,
+        };
+
         private const string RemoveExtBtnLabel = "Remove unsupported";
 
         /// <summary>
@@ -1034,7 +1175,7 @@ namespace BrowseSafe
                     Text = o => ((AppActivity)o).Kind,
                     FilterKind = ColumnFilterKind.Dropdown },
                 new GridColumn { Header = "Rank", Width = 70,
-                    Text = o => ((AppActivity)o).CRank.ToString(),
+                    Text = o => ((AppActivity)o).RankText,
                     Sort = o => ((AppActivity)o).CRank },
                 new GridColumn { Header = "App name", Fill = 140, Text = o => ((AppActivity)o).DisplayName },
                 new GridColumn { Header = "App ID / path", Fill = 200,

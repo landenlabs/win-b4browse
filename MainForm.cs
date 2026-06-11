@@ -284,6 +284,7 @@ namespace BrowseSafe
             AddViewTab("DNS", "dns", TabViews.BuildDns());
             AddViewTab("ARP", "arp", TabViews.BuildArp());
             AddViewTab("Chrome", "chrome", TabViews.BuildChrome());
+            AddViewTab("Settings", "settings", TabViews.BuildSettings());
             AddViewTab("Services", "services", TabViews.BuildServices());
             AddViewTab("Processes", "processes", TabViews.BuildProcesses());
             AddViewTab("Startup", "startup", TabViews.BuildStartup());

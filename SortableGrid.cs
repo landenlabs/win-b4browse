@@ -74,6 +74,10 @@ namespace BrowseSafe
         private bool _asc;
         private bool _loading;
         private int _buttonColIndex = -1;
+        // True when the next Populate should re-fit column widths to content (set on data/scale
+        // changes, cleared after fitting). Pure view changes - sort, filter, theme - leave it
+        // false so the user's manual column widths are preserved.
+        private bool _autoFitPending;
 
         // ---- Per-column filter bar (optional) ---------------------------- //
         private Panel? _filterBar;
@@ -247,8 +251,13 @@ namespace BrowseSafe
                     };
                 }
                 col.HeaderText = c.Header;
-                if (c.Fill > 0) { col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill; col.FillWeight = c.Fill; }
-                else col.Width = c.Width;
+                // Explicit widths only (no Fill auto-size). The on-load content fit decides the
+                // default width; a 2px MinimumWidth lets the user drag any column down to nothing
+                // (Fill mode and a content-sized MinimumWidth both blocked that). The initial width
+                // is just a placeholder until the first load auto-fits it.
+                col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None;
+                col.MinimumWidth = 2;
+                col.Width = c.Fill > 0 ? c.Fill : c.Width;
                 _grid.Columns.Add(col);
             }
 
@@ -321,7 +330,7 @@ namespace BrowseSafe
             _grid.ColumnHeadersDefaultCellStyle.Font = cellFont;
             if (_header != null) _header.Font = Theme.Scaled("Consolas", 9f);
 
-            if (_items.Count > 0) Populate();           // re-lay rows at the new size
+            if (_items.Count > 0) { _autoFitPending = true; Populate(); }  // refit: glyph metrics changed
             if (_lastHeader != null) RenderHeader(_lastHeader);
             _grid.AutoResizeRows();                      // pick up the new cell-font height
         }
@@ -397,6 +406,7 @@ namespace BrowseSafe
         /// Use after mutating the loaded row objects, e.g. an INF scan that fills a risk column.</summary>
         public void RefreshDisplay()
         {
+            _autoFitPending = true;        // rows were mutated in place: refit to the new content
             Populate();
             Severity = _severityEval?.Invoke(_items) ?? TabSeverity.None;
             SeverityChanged?.Invoke();
@@ -426,6 +436,7 @@ namespace BrowseSafe
                 if (_header != null && headerGroup != null) RenderHeader(headerGroup);
                 RebuildFilterChoices();
                 SortItems();
+                _autoFitPending = true;        // new data: re-fit column widths to its content
                 Populate();
 
                 string count = $"{_items.Count} item(s)   -   {DateTime.Now:HH:mm:ss}";
@@ -791,7 +802,7 @@ namespace BrowseSafe
             }
             UpdateSortGlyphs();
             _grid.ResumeLayout();
-            AdjustColumnWidthsForScroll();
+            if (_autoFitPending) { AutoFitColumns(); _autoFitPending = false; }
 
             if (_filterCount != null)
             {
@@ -801,20 +812,34 @@ namespace BrowseSafe
         }
 
         /// <summary>
-        /// Makes the grid scroll horizontally rather than silently truncate. Each column's
-        /// MinimumWidth is set to the width its content needs (header + widest visible cell), so a
-        /// Fill column still spreads to fill spare room but never shrinks below its content. When
-        /// the columns together no longer fit, the grid's built-in horizontal scrollbar appears.
-        /// Recomputed on every Populate so it tracks the current rows, filter, and font scale.
+        /// Sets each column's default width to fit its content (header + widest cell across all
+        /// rows) so every field is fully visible on load; when the columns together exceed the
+        /// viewport the grid's built-in horizontal scrollbar appears. MinimumWidth stays at 2px so
+        /// the user can still drag any column down to almost nothing. Any spare viewport width is
+        /// handed to the Fill column(s) by weight so the grid still reaches the right edge.
+        /// Runs only when <see cref="_autoFitPending"/> is set (a data or font-scale change), never
+        /// on a plain sort/filter, so manual column widths survive those.
         /// </summary>
-        private void AdjustColumnWidthsForScroll()
+        private void AutoFitColumns()
         {
-            foreach (DataGridViewColumn col in _grid.Columns)
+            int total = 0, fillWeight = 0;
+            for (int i = 0; i < _grid.Columns.Count; i++)
             {
-                // Width needed to show this column's header and every visible cell in full.
+                var col = _grid.Columns[i];
                 int preferred = col.GetPreferredWidth(DataGridViewAutoSizeColumnMode.AllCells, fixedHeight: true);
-                col.MinimumWidth = Math.Max(24, preferred);
+                col.MinimumWidth = 2;
+                col.Width = Math.Max(2, preferred);
+                total += col.Width;
+                if (i < _cols.Length && _cols[i].Fill > 0) fillWeight += _cols[i].Fill;
             }
+
+            // Everything fits with room to spare: spread the slack over the Fill column(s) so the
+            // last columns reach the right edge instead of leaving a blank gutter.
+            int slack = _grid.ClientSize.Width - total;
+            if (slack > 0 && fillWeight > 0)
+                for (int i = 0; i < _grid.Columns.Count; i++)
+                    if (i < _cols.Length && _cols[i].Fill > 0)
+                        _grid.Columns[i].Width += slack * _cols[i].Fill / fillWeight;
         }
 
         private void OnHeaderClick(object? sender, DataGridViewCellMouseEventArgs e)
@@ -870,11 +895,17 @@ namespace BrowseSafe
             {
                 var cell = _grid.Rows[e.RowIndex].Cells[e.ColumnIndex];
                 var text = cell.Value?.ToString();
-                if (!string.IsNullOrEmpty(text))
+                if (string.IsNullOrEmpty(text)) return;
+                // chrome:// URIs can't be shell-launched; route them through the same handler
+                // the header deep-links use (chrome.exe + clipboard fallback).
+                if (text.StartsWith("chrome://", StringComparison.OrdinalIgnoreCase))
                 {
-                    try { Process.Start(new ProcessStartInfo(text) { UseShellExecute = true }); }
-                    catch { try { Process.Start(new ProcessStartInfo("cmd", $"/c start \"\" \"{text}\"") { CreateNoWindow = true }); } catch { } }
+                    var rect = _grid.GetCellDisplayRectangle(e.ColumnIndex, e.RowIndex, false);
+                    OpenSettingUri(text, new Point(rect.Left, rect.Bottom));
+                    return;
                 }
+                try { Process.Start(new ProcessStartInfo(text) { UseShellExecute = true }); }
+                catch { try { Process.Start(new ProcessStartInfo("cmd", $"/c start \"\" \"{text}\"") { CreateNoWindow = true }); } catch { } }
             }
         }
 

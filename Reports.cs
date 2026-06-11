@@ -28,6 +28,7 @@ namespace BrowseSafe
             ("arp",       "ARP Cache", new Func<CheckGroup>[] { SafetyChecks.CheckArp }),
             ("patches",   "Patches", new Func<CheckGroup>[] { SafetyChecks.CheckPatches }),
             ("chrome",    "Chrome", new Func<CheckGroup>[] { SafetyChecks.CheckChromeExe, SafetyChecks.CheckChromePrivacy, SafetyChecks.CheckChromeExtensions }),
+            ("settings",  "Chrome Settings", new Func<CheckGroup>[] { SafetyChecks.CheckChromeSettings }),
             ("services",  "Services", new Func<CheckGroup>[] { SafetyChecks.CheckServices }),
             ("processes", "Processes", new Func<CheckGroup>[] { SafetyChecks.CheckProcesses }),
             ("startup",   "Startup", new Func<CheckGroup>[] { SafetyChecks.CheckStartup }),

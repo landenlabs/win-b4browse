@@ -133,6 +133,44 @@ namespace BrowseSafe
             "- Right-click a row to open the extension's folder or copy its path.\n" +
             "\n" + Common);
 
+        public static readonly HelpInfo Settings = new("Chrome Settings",
+            "# What this shows\n" +
+            "A matrix of Chrome settings: one row per setting, one column per Chrome profile (by its " +
+            "friendly name), plus a 'Global' column for settings enforced by enterprise policy. It reads " +
+            "each profile's Preferences and Secure Preferences files, the Chrome policy registry, the " +
+            "extension folders, and - for the saved-password count only - the Login Data database. " +
+            "Configuration only: no password values, URLs, or other sensitive data are ever read.\n" +
+            "\n" +
+            "# Values\n" +
+            "Chrome stores a setting only when you change it from its default, so each cell is one of:\n" +
+            "- an explicit value - On / Off / Allowed / Blocked / a number, etc.\n" +
+            "- Default - the setting is unchanged from Chrome's built-in default.\n" +
+            "- a dash - that column has no value for the row (e.g. most rows in the policy-only Global " +
+            "column, which is sparse by design).\n" +
+            "\n" +
+            "# Colour\n" +
+            "Known-weak values are highlighted and roll into the tab's colour: Safe Browsing OFF is red; " +
+            "allowed third-party cookies, permissive site defaults (notifications / location / camera / " +
+            "microphone / pop-ups / automatic downloads set to Allow), and enabled ad-tracking (Privacy " +
+            "Sandbox) are yellow. Only explicit risky values are flagged - 'Default' is never coloured.\n" +
+            "\n" +
+            "# Right-click a setting\n" +
+            "- Explain - opens a description of what every setting does, scrolled to the one you clicked.\n" +
+            "- Search the web - opens an online search for that setting.\n" +
+            "- Open settings file - per Chrome profile, opens that profile's Preferences or Secure " +
+            "Preferences JSON (in Notepad - they have no file extension), opens the folder, or copies its " +
+            "path. These JSON files are where Chrome stores the values shown in this matrix.\n" +
+            "\n" +
+            "# Notes\n" +
+            "- The last column, 'Open in Chrome', is the chrome:// page where that setting lives. Click it " +
+            "to launch Chrome there; the URL is also copied to the clipboard, so if Chrome opens its profile " +
+            "picker instead of navigating, just paste (Ctrl+V) into the address bar.\n" +
+            "- The saved-password count is a count only - the Login Data database is copied to a temp file " +
+            "and the rows are counted; no password is read or decrypted.\n" +
+            "- Columns are fixed when the tab opens. A Chrome profile created while Browse Safe is running " +
+            "won't get its own column until you restart the app (Refresh reloads values, not columns).\n" +
+            "\n" + Common);
+
         public static readonly HelpInfo Services = new("Windows Services",
             "# What this shows\n" +
             "Installed services, with status driven by the modify date of each service's executable.\n" +
@@ -323,6 +361,21 @@ namespace BrowseSafe
             "only last-run signal, merged in from the separate PCA log (admin only). The database is copied " +
             "to a temp file before reading, so Windows Search is never locked or modified. If AppsIndex.db " +
             "is absent (older Windows builds) the tab is empty.\n" +
+            "\n" +
+            "# Last-run source (PCA log)\n" +
+            "The 'When' column comes from the Program Compatibility Assistant log:\n" +
+            "    C:\\Windows\\appcompat\\pca\\PcaAppLaunchDic.txt\n" +
+            "An executable that the app-usage index never tracked but the PCA log has a last-run time for is " +
+            "still listed as its own row (launch count 1; Type / Rank show '--').\n" +
+            "\n" +
+            "The log can be cleared by first stopping the service, then deleting the file:\n" +
+            "    net stop PcaSvc\n" +
+            "    del C:\\Windows\\appcompat\\pca\\PcaAppLaunchDic.txt\n" +
+            "\n" +
+            "PCA last-run tracking can be permanently disabled with:\n" +
+            "    sc config PcaSvc start= disabled\n" +
+            "    net stop PcaSvc\n" +
+            "These commands need an elevated (Administrator) command prompt.\n" +
             "\n" +
             "# Special actions\n" +
             "- Right-click a row to open the file location, copy the name / app ID / launch count, or search " +

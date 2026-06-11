@@ -37,6 +37,16 @@ namespace BrowseSafe
         public DateTime? LastExecuted;
         public string LastExecutedText = "—";   // "yyyy-MM-dd HH:mm" or "—"
 
+        /// <summary>True for a row synthesized purely from the PCA launch log: the executable has a
+        /// recorded last-run time but Windows Search's app-usage index never tracked it, so there is
+        /// no launch count, <see cref="Kind"/>, or <see cref="CRank"/>. Such rows show a launch count
+        /// of 1 and "--" for the Type / Rank columns.</summary>
+        public bool IsLastRunOnly;
+
+        /// <summary>Rank column text: the index relevance rank, or "--" for a PCA-only row that the
+        /// app-usage index never ranked.</summary>
+        public string RankText => IsLastRunOnly ? "--" : CRank.ToString();
+
         /// <summary>Per-row audit severity (e.g. a launched binary that lives in a transient folder).</summary>
         public TabSeverity Risk;
 

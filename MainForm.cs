@@ -40,6 +40,7 @@ namespace BrowseSafe
         private Label _adminIcon = null!;     // Segoe MDL2 shield glyph
         private Label _adminStatus = null!;   // "Administrator" / "Standard user"
         private Label _netStatus = null!;
+        private Label _errorBadge = null!;    // "⚠ N errors" - click opens ErrorLogDialog; hidden at 0
         private Label _scaleCaption = null!;
         private Button _scaleMinus = null!;
         private Label _scaleLabel = null!;
@@ -407,12 +408,50 @@ namespace BrowseSafe
             _tips.SetToolTip(_scalePlus, "Larger content font");
             _tips.SetToolTip(_scaleLabel, "Content font scale - click to reset to 100%");
 
+            // Error badge: a quiet count of background-action failures (PowerShell agents that
+            // timed out / returned nothing / threw). Hidden when zero; click opens the detail
+            // dialog. Keeps the main tabs clean - one place to look when something didn't run.
+            _errorBadge = new Label
+            {
+                AutoSize = true, Top = 7, Visible = false, Cursor = Cursors.Hand,
+                Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            };
+            _errorBadge.Click += (_, _) => new ErrorLogDialog().ShowDialog(this);
+            _tips.SetToolTip(_errorBadge, "Background actions that failed this session - click for details");
+            _statusBar.Controls.Add(_errorBadge);
+
             _statusBar.Controls.Add(_scaleCaption);
             _statusBar.Controls.Add(_scaleMinus);
             _statusBar.Controls.Add(_scaleLabel);
             _statusBar.Controls.Add(_scalePlus);
 
+            ErrorLog.Changed += OnErrorLogChanged;
+            UpdateErrorBadge();
+
             _statusBar.SizeChanged += (_, _) => LayoutStatusBar();
+            LayoutStatusBar();
+        }
+
+        /// <summary>ErrorLog fires on background (check) threads; marshal the badge update to the UI.</summary>
+        private void OnErrorLogChanged()
+        {
+            if (IsHandleCreated) BeginInvoke(new Action(UpdateErrorBadge));
+        }
+
+        /// <summary>Shows/hides and re-tints the status-bar error badge from the current count.</summary>
+        private void UpdateErrorBadge()
+        {
+            int n = ErrorLog.Count;
+            if (n == 0)
+            {
+                _errorBadge.Visible = false;
+                return;
+            }
+            _errorBadge.Text = $"⚠ {n} error{(n == 1 ? "" : "s")}";
+            _errorBadge.ForeColor = Theme.IsDark
+                ? Color.FromArgb(240, 170, 80)
+                : Color.FromArgb(170, 90, 0);
+            _errorBadge.Visible = true;
             LayoutStatusBar();
         }
 
@@ -438,6 +477,12 @@ namespace BrowseSafe
             x = _adminStatus.Right + 20;
             _netStatus.Left = x;
             _netStatus.Top = (h - _netStatus.Height) / 2;
+
+            if (_errorBadge != null && _errorBadge.Visible)
+            {
+                _errorBadge.Left = _netStatus.Right + 24;
+                _errorBadge.Top = (h - _errorBadge.Height) / 2;
+            }
         }
 
         /// <summary>
@@ -506,6 +551,7 @@ namespace BrowseSafe
             NetworkChange.NetworkAvailabilityChanged -= OnNetworkChanged;
             NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
             Theme.ScaleChanged -= UpdateScaleLabel;
+            ErrorLog.Changed -= OnErrorLogChanged;
             base.OnFormClosed(e);
         }
 
@@ -527,6 +573,7 @@ namespace BrowseSafe
             _scaleLabel.ForeColor = Theme.Text;
             UpdateAdminStatus(); // re-tint elevation indicator for the new theme
             UpdateNetStatus();   // re-tint the network indicator for the new theme
+            UpdateErrorBadge();  // re-tint the error badge for the new theme
 
             // Explicitly paint every button (toolbar, left panel, and inside each tab view).
             Theme.StyleButtons(this);

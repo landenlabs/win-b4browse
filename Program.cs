@@ -144,10 +144,30 @@ EXAMPLES:
 
                 Console.WriteLine(text);
                 if (outPath != null) WriteOut(outPath, text);
+
+                // Background-action failures (timeouts / stderr / bad output) are collected out of
+                // band so the report stays clean; surface them on stderr so they aren't lost.
+                FlushErrorLog();
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine("Report failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>Writes any recorded background-action errors to stderr (keeping stdout the clean report).</summary>
+        static void FlushErrorLog()
+        {
+            var errors = ErrorLog.Snapshot();
+            if (errors.Count == 0) return;
+
+            Console.Error.WriteLine();
+            Console.Error.WriteLine($"--- {errors.Count} background error(s) ---");
+            foreach (var e in errors)
+            {
+                Console.Error.WriteLine($"[{e.Category}] {e.Source}: {e.Message}");
+                if (!string.IsNullOrWhiteSpace(e.Detail))
+                    Console.Error.WriteLine("    " + e.Detail.Replace("\n", "\n    "));
             }
         }
 

@@ -92,6 +92,7 @@ namespace BrowseSafe
                         // report (notably --run all, which runs every producer).
                         g = new CheckGroup($"{title} - check error");
                         g.Add(CheckStatus.Fail, "Unhandled error", ex.Message);
+                        ErrorLog.Add(ErrorCategory.Error, "Unhandled error in check", ex.ToString(), title);
                     }
 
                     sb.AppendLine();

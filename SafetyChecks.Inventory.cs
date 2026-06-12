@@ -5,6 +5,7 @@ using System.Management;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Security.Cryptography;
@@ -1122,10 +1123,11 @@ namespace BrowseSafe
         }
 
         /// <summary>Runs a PowerShell script whose output is a JSON array (or single object) and returns its elements.</summary>
-        private static List<JsonElement> RunPowerShellArray(string script)
+        private static List<JsonElement> RunPowerShellArray(string script, [CallerMemberName] string source = "")
         {
             var list = new List<JsonElement>();
-            var root = RunPowerShellJson(script);
+            // Forward the caller so any logged failure is attributed to the check, not this wrapper.
+            var root = RunPowerShellJson(script, source: source);
             if (root == null) return list;
             if (root.Value.ValueKind == JsonValueKind.Array)
                 foreach (var e in root.Value.EnumerateArray()) list.Add(e.Clone());

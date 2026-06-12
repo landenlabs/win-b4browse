@@ -7,6 +7,7 @@ using System.Linq;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -590,9 +591,13 @@ $r | ConvertTo-Json -Compress -Depth 5
         /// <summary>
         /// Runs a PowerShell script (fed via stdin) and returns its JSON output
         /// as a detached <see cref="JsonElement"/>, or null on any failure. The child is
-        /// killed if it has not finished within <paramref name="timeoutMs"/>.
+        /// killed if it has not finished within <paramref name="timeoutMs"/>. Every failure
+        /// path (timeout, no output, stderr, bad JSON, exception) is recorded to
+        /// <see cref="ErrorLog"/> under <paramref name="source"/> (the calling check) so a
+        /// silently-empty tab is explained rather than just blank.
         /// </summary>
-        private static JsonElement? RunPowerShellJson(string script, int timeoutMs = DefaultPsTimeoutMs)
+        private static JsonElement? RunPowerShellJson(
+            string script, int timeoutMs = DefaultPsTimeoutMs, [CallerMemberName] string source = "")
         {
             // -EncodedCommand (base64 UTF-16LE) runs multi-line scripts reliably and
             // sidesteps stdin/quoting issues. Progress/verbose streams go to stderr,
@@ -614,7 +619,11 @@ $r | ConvertTo-Json -Compress -Depth 5
             try
             {
                 using var proc = Process.Start(psi);
-                if (proc == null) return null;
+                if (proc == null)
+                {
+                    ErrorLog.Add(ErrorCategory.Error, "powershell.exe failed to start", source: source);
+                    return null;
+                }
 
                 // Read stdout AND stderr concurrently. Reading only stdout to EOF while
                 // stderr is redirected risks a deadlock: if the child fills the (small)
@@ -628,12 +637,27 @@ $r | ConvertTo-Json -Compress -Depth 5
                 if (!Task.WaitAll(new Task[] { outTask, errTask }, timeoutMs))
                 {
                     try { proc.Kill(entireProcessTree: true); } catch { /* already exited */ }
+                    ErrorLog.Add(ErrorCategory.Timeout,
+                        $"PowerShell timed out after {timeoutMs} ms and was killed.",
+                        "A firewall or slow query may be blocking the action.", source);
                     return null;   // killing closes the pipes; the read tasks unblock and are dropped
                 }
                 proc.WaitForExit();
 
                 string output = outTask.Result.Trim();
-                if (string.IsNullOrEmpty(output)) return null;
+                if (string.IsNullOrEmpty(output))
+                {
+                    // Distinguish a genuine failure (stderr text or a non-zero exit) from a
+                    // script that legitimately produced no rows (exit 0, no stderr) - only the
+                    // former is worth logging, so an empty-but-clean result stays quiet.
+                    string err = outTask.IsCompleted ? errTask.Result.Trim() : "";
+                    if (err.Length > 0)
+                        ErrorLog.Add(ErrorCategory.Error, "PowerShell produced no output", err, source);
+                    else if (proc.ExitCode != 0)
+                        ErrorLog.Add(ErrorCategory.Error,
+                            $"PowerShell exited {proc.ExitCode} with no output", source: source);
+                    return null;
+                }
 
                 // Belt-and-suspenders: isolate the (single-line, -Compress) JSON if any
                 // CLIXML/progress noise ever leaks onto stdout.
@@ -646,12 +670,23 @@ $r | ConvertTo-Json -Compress -Depth 5
                     }
                 }
 
-                // Clone the root so it survives disposal of the JsonDocument.
-                using var doc = JsonDocument.Parse(output);
-                return doc.RootElement.Clone();
+                try
+                {
+                    // Clone the root so it survives disposal of the JsonDocument.
+                    using var doc = JsonDocument.Parse(output);
+                    return doc.RootElement.Clone();
+                }
+                catch (JsonException jex)
+                {
+                    ErrorLog.Add(ErrorCategory.ParseError,
+                        "PowerShell output was not valid JSON: " + jex.Message,
+                        output.Length > 600 ? output[..600] + " ..." : output, source);
+                    return null;
+                }
             }
-            catch
+            catch (Exception ex)
             {
+                ErrorLog.Add(ErrorCategory.Error, "PowerShell run failed: " + ex.Message, ex.ToString(), source);
                 return null;
             }
         }

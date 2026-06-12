@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -95,7 +96,8 @@ namespace BrowseSafe
         /// <paramref name="timeoutMs"/> bounds the wait (longer for installs); when
         /// <paramref name="includeStdErr"/> is set, any stderr text is appended (so a failed command
         /// still reports its error rather than looking like empty success).</summary>
-        private static string? RunCapture(string fileName, string args, int timeoutMs = 30000, bool includeStdErr = false)
+        private static string? RunCapture(string fileName, string args, int timeoutMs = 30000,
+            bool includeStdErr = false, [CallerMemberName] string source = "")
         {
             var psi = new ProcessStartInfo
             {
@@ -116,6 +118,9 @@ namespace BrowseSafe
                 if (!Task.WaitAll(new Task[] { outTask, errTask }, timeoutMs))
                 {
                     try { proc.Kill(entireProcessTree: true); } catch { /* already exited */ }
+                    ErrorLog.Add(ErrorCategory.Timeout,
+                        $"{System.IO.Path.GetFileName(fileName)} timed out after {timeoutMs} ms and was killed.",
+                        source: source);
                     return null;
                 }
                 proc.WaitForExit();
@@ -124,8 +129,13 @@ namespace BrowseSafe
                     outText = outText.Length > 0 ? outText + "\n" + errTask.Result : errTask.Result;
                 return outText;
             }
-            catch (Win32Exception) { return null; }   // winget not installed / not on PATH
-            catch { return null; }
+            catch (Win32Exception) { return null; }   // winget not installed / not on PATH - an expected, quiet condition
+            catch (Exception ex)
+            {
+                ErrorLog.Add(ErrorCategory.Error,
+                    $"{System.IO.Path.GetFileName(fileName)} failed: {ex.Message}", ex.ToString(), source);
+                return null;
+            }
         }
 
         /// <summary>

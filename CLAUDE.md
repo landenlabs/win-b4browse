@@ -64,6 +64,9 @@ The whole app is built on one small data model and a central catalog:
 - **`SortableGrid.cs`** — custom sortable, themeable grid control used by the tabs.
 - **`TabHelp.cs` / `TabSeverity.cs` / `Help.cs` / `AboutForm.cs` / `BusyOverlay.cs`** —
   per-tab help text, severity legend, help/about dialogs, busy overlay.
+- **`ErrorLogDialog.cs`** — modal viewer for `ErrorLog`: a themed ListView of background-action
+  failures (time / category / source / message + detail), Copy/Clear, live-refreshes while open.
+  Opened from the `⚠ N errors` badge in the `MainForm` status bar (hidden at 0).
 - **`Theme.cs`** — light/dark theme (toggle bottom-left); loaded before any window shows.
 
 ### SafetyChecks partials (the checks)
@@ -104,6 +107,11 @@ Virus tab uses `DefenderModels.cs`: `DefenderStatusSummary` (WMI state), `Threat
 - `InfAnalyzer.cs` — parse/analyze driver `.inf` files (driver tab "Analyze INF").
 - `ReportMailer.cs` — "Email this tab (Chrome)".
 - `ShellExtension.cs` — shell-extension lookup support.
+- `ErrorLog.cs` — process-wide, thread-safe, bounded in-memory sink for background-action
+  failures (`ErrorCategory` Timeout/ParseError/Error, `ErrorEntry`, `Changed` event,
+  `Count`/`Snapshot`/`Clear`). No-throw, so logging never perturbs the failure it records. The
+  three diagnostic runners (`RunPowerShellJson`, `RunPowerShellArray`, `RunCapture`) and the
+  `Reports.Build` producer-exception catch feed it; viewed via `ErrorLogDialog`.
 
 ## Versioning — keep in sync
 
@@ -119,6 +127,11 @@ Version lives in several places; **do not hand-edit them individually**.
 - Files are flat in the repo root, one top-level type per file, `BrowseSafe` namespace.
 - Each check is self-contained and exception-isolated — a failing check returns a
   `Fail` result rather than throwing across the report.
+- Background-action failures (an agent that times out, writes stderr, exits non-zero, or
+  returns unparseable output) are recorded to `ErrorLog` instead of being swallowed by the
+  runners' `return null`. A script that legitimately returns nothing (exit 0, no stderr) is
+  **not** logged — only real failures are, so the `⚠ N errors` badge stays meaningful. The GUI
+  surfaces them via the badge → `ErrorLogDialog`; headless `--run` flushes them to stderr.
 - Headless progress goes to **stderr**, the report to **stdout** (so stdout stays clean).
 - Dependencies: `System.Management` (WMI), `Microsoft.Data.Sqlite` (reads the Windows
   Search `AppsIndex.db` for the Activity tab — its bundled native SQLite supplies the FTS5

@@ -2,7 +2,7 @@
 <table border="0">
   <tr>
     <td>
-      <!-- VERSION -->v6.06.08<br>
+      <!-- VERSION -->v6.06.09<br>
       <!-- DATE -->11-Jun-2026<br>
       Windows<br>
       <a href="https://landenlabs.com/index.html">Home</a>

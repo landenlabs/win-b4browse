@@ -4,7 +4,7 @@ using System;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Network availability helper. Used to short-circuit network-dependent tabs

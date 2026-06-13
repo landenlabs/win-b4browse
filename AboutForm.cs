@@ -7,7 +7,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     public class AboutForm : Form
     {
@@ -26,7 +26,7 @@ namespace BrowseSafe
 
         public AboutForm()
         {
-            Text = "About Browse Safe";
+            Text = "About B4 Browse";
             Icon = EmbeddedAssets.LoadIcon("icon.ico");
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
@@ -50,7 +50,7 @@ namespace BrowseSafe
                 Width = ClientSize.Width - 24,
                 Height = 24,
                 Font = new Font("Segoe UI", 11f, FontStyle.Bold),
-                Text = "Browse Safe - Chrome Safety Check",
+                Text = "B4 Browse - Chrome Safety Check",
                 TextAlign = ContentAlignment.MiddleCenter,
             };
 
@@ -84,7 +84,7 @@ namespace BrowseSafe
                 Top = _desc.Bottom + 8,
                 Width = ClientSize.Width - 140,
                 Height = 20,
-                Text = "https://github.com/landenlabs/win-browse-safe",
+                Text = "https://github.com/landenlabs/win-b4-browse",
                 LinkBehavior = LinkBehavior.HoverUnderline
             };
             _link.LinkClicked += (_, _) => { try { var psi = new ProcessStartInfo(_link.Text) { UseShellExecute = true }; Process.Start(psi); } catch { } };

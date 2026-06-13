@@ -1,6 +1,6 @@
 // Copyright (c) 2026 LanDen Labs - Dennis Lang
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the ARP tab - a neighbor entry in the local IPv4 ARP cache.</summary>
     public sealed class ArpEntry

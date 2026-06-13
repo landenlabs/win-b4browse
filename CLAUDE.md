@@ -1,4 +1,4 @@
-# Browse Safe — project index
+# B4 Browse — project index
 
 Windows desktop utility (C# WinForms) that verifies the network and OS are in a safe
 state before browsing. Two jobs: (1) confirm the network path is clean — no rogue proxy,
@@ -8,18 +8,18 @@ and presents results across sortable, color-coded tabs. Also runs headless to pr
 plain-text report. See `README.md` for the user-facing feature tour.
 
 - **Framework:** .NET 10 (`net10.0-windows`), WinForms, nullable + implicit usings enabled.
-- **Namespace / assembly:** `BrowseSafe`. Single project, flat directory (no subfolders).
+- **Namespace / assembly:** `B4Browse`. Single project, flat directory (no subfolders).
 - **Author:** Dennis Lang — LanDen Labs (2026). Apache-2.0.
 
 ## Build & run
 
 ```pwsh
-dotnet build                       # or open BrowseSafe.sln in Visual Studio
+dotnet build                       # or open B4Browse.sln in Visual Studio
 dotnet run                         # launch the GUI (Safety Scan runs on first show)
-BrowseSafe.exe --run <scope>       # headless: run checks, print text report to stdout
-BrowseSafe.exe --report            # alias for --run scan
-BrowseSafe.exe --inventory         # alias for --run all
-BrowseSafe.exe --run events --out events.txt   # also write report to a file
+B4Browse.exe --run <scope>       # headless: run checks, print text report to stdout
+B4Browse.exe --report            # alias for --run scan
+B4Browse.exe --inventory         # alias for --run all
+B4Browse.exe --run events --out events.txt   # also write report to a file
 ```
 
 Scopes: `scan, dns, arp, patches, chrome, settings, services, processes, startup, scheduled,
@@ -119,12 +119,12 @@ Version lives in several places; **do not hand-edit them individually**.
 `set-version.ps1` is the single source that rewrites all of them on release:
 - `AppInfo.cs` (`Version`, `BuildDate`, `Copyright`) — guarded by the `AUTO-VERSION` marker comment.
 - `VERSION` file, `README.md` `<!-- VERSION -->` / `<!-- DATE -->` markers.
-- `BrowseSafe.csproj` `<Version>` / `<Copyright>` (drive the exe's file/product version).
+- `B4Browse.csproj` `<Version>` / `<Copyright>` (drive the exe's file/product version).
 
 `AppInfo` is the runtime source for the version shown in-app.
 
 ## Conventions
-- Files are flat in the repo root, one top-level type per file, `BrowseSafe` namespace.
+- Files are flat in the repo root, one top-level type per file, `B4Browse` namespace.
 - Each check is self-contained and exception-isolated — a failing check returns a
   `Fail` result rather than throwing across the report.
 - Background-action failures (an agent that times out, writes stderr, exits non-zero, or

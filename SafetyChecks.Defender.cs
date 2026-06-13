@@ -7,7 +7,7 @@ using System.Linq;
 using System.Management;
 using System.Text.Json;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Microsoft Defender "Virus" summary (the Virus tab and its --run virus report). Two sources:

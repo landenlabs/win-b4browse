@@ -6,7 +6,7 @@ using System.IO;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Emails a report by opening a Gmail compose window in Chrome with the report
@@ -27,13 +27,13 @@ namespace BrowseSafe
             }
 
             string file = Path.Combine(Path.GetTempPath(),
-                $"browse-safe-{scope}-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+                $"b4-browse-{scope}-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
             try { await Task.Run(() => File.WriteAllText(file, report.Text)); } catch { /* non-fatal */ }
             try { Clipboard.SetText(report.Text); } catch { /* clipboard may be busy */ }
 
             // Gmail's compose URL rejects long bodies with HTTP 400, so the body is a short
             // summary + instruction; the full report is on the clipboard, ready to paste.
-            string subject = $"Browse Safe report - {tabName} - {DateTime.Now:yyyy-MM-dd HH:mm}";
+            string subject = $"B4 Browse report - {tabName} - {DateTime.Now:yyyy-MM-dd HH:mm}";
             string body = ShortBody(tabName, report.Overall);
             string url = "https://mail.google.com/mail/?view=cm&fs=1" +
                          $"&su={Uri.EscapeDataString(subject)}&body={Uri.EscapeDataString(body)}";
@@ -49,7 +49,7 @@ namespace BrowseSafe
                 _ => "OK - no failures.",
             };
             return
-                $"Browse Safe report - {tabName}\r\n" +
+                $"B4 Browse report - {tabName}\r\n" +
                 $"Verdict: {verdict}\r\n\r\n" +
                 "The full report is on your clipboard.\r\n" +
                 "Click in the message body and press Ctrl+V to paste it here, then send.";

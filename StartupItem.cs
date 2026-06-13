@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Startup tab - a login auto-run entry.</summary>
     public sealed class StartupItem

@@ -14,7 +14,7 @@ using System.Web;
 using System.Windows.Forms;
 using System.Xml.Linq;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>Factories that configure <see cref="SortableGrid"/> instances for the grid tabs.</summary>
     public static class TabViews
@@ -833,7 +833,7 @@ namespace BrowseSafe
                 string prompt =
                     $"Remove {unsupported.Count} unsupported extension(s)?\n\n{list}\n\n" +
                     $"First, all {all.Count} extension(s) will be backed up to:\n" +
-                    "   Downloads\\bsafe-extension-backup.zip\n\n" +
+                    "   Downloads\\b4browse-extension-backup.zip\n\n" +
                     "Close Chrome first for a clean removal. This permanently deletes the extension folders.";
                 if (await CopyableMessageBox.ShowAsync(form, prompt, "Remove unsupported extensions",
                         MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)

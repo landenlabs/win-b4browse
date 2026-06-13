@@ -9,7 +9,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// winget (App Installer) integration for the Installed tab. `winget list` is a

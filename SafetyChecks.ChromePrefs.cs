@@ -7,7 +7,7 @@ using System.Linq;
 using System.Text.Json;
 using Microsoft.Win32;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Chrome privacy &amp; security settings audit (shown in the Chrome tab header). Reads each

@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     // Loads assets that are baked into the (single-file) exe as manifest resources,
     // falling back to a loose file next to the exe for debug runs from the build folder.

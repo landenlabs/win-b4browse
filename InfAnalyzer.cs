@@ -6,7 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One finding from analysing a driver .inf file.</summary>
     public sealed class InfFinding

@@ -10,7 +10,7 @@ using System.Text;
 using Microsoft.Isam.Esent;          // EsentException (base)
 using Microsoft.Isam.Esent.Interop;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Per-application network usage from SRUM (the Downloads tab). Windows' System Resource
@@ -72,8 +72,8 @@ namespace BrowseSafe
                 return empty;
             }
 
-            string copy = Path.Combine(Path.GetTempPath(), $"SRUDB_bsafe_{Guid.NewGuid():N}.dat");
-            string workDir = Path.Combine(Path.GetTempPath(), $"sru_bsafe_{Guid.NewGuid():N}");
+            string copy = Path.Combine(Path.GetTempPath(), $"SRUDB_b4browse_{Guid.NewGuid():N}.dat");
+            string workDir = Path.Combine(Path.GetTempPath(), $"sru_b4browse_{Guid.NewGuid():N}");
             try
             {
                 Directory.CreateDirectory(workDir);
@@ -201,7 +201,7 @@ namespace BrowseSafe
         /// <summary>Reads the network table and id-map from a (clean) ESE copy and aggregates by app.</summary>
         private static List<SruNetUsage> ParseSru(string dbPath, string workDir)
         {
-            using var instance = new Instance("bsafe_sru_" + Guid.NewGuid().ToString("N"));
+            using var instance = new Instance("b4browse_sru_" + Guid.NewGuid().ToString("N"));
             instance.Parameters.Recovery = false;                 // attach the standalone copy, no logs
             instance.Parameters.CircularLog = true;
             instance.Parameters.NoInformationEvent = true;

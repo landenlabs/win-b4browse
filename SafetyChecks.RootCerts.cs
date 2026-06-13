@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Audits the trusted-root certificate stores (LocalMachine + CurrentUser). A root in

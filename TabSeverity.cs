@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>Worst state detected on a tab, used to colour its header.</summary>
     public enum TabSeverity { None = 0, Ok = 1, Caution = 2, Alert = 3 }

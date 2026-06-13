@@ -13,7 +13,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Deeper network probes: the *true* upstream DNS resolver behind the router,
@@ -43,7 +43,7 @@ namespace BrowseSafe
         private static HttpClient CreateHttp()
         {
             var c = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
-            c.DefaultRequestHeaders.UserAgent.ParseAdd("BrowseSafe/1.0");
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("B4Browse/1.0");
             return c;
         }
 
@@ -418,6 +418,36 @@ $r | ConvertTo-Json -Compress -Depth 5
             {
                 group.Add(CheckStatus.Info, "Gateway MAC",
                     "Could not read (gateway may be off the local segment).");
+            }
+
+            // --- Wi-Fi association: which network (SSID) and which access point (BSSID) ---
+            // With a mesh (several nodes broadcasting one SSID) the SSID alone can't tell you
+            // which node you're on - the BSSID (the AP's MAC) does, and the signal/channel
+            // help confirm it. Shown only when a wireless interface is actually connected.
+            foreach (var w in QueryWlanInterfaces())
+            {
+                if (w.Ssid.Length == 0 && w.Bssid.Length == 0) continue;
+
+                string ssid = w.Ssid.Length > 0 ? $"\"{w.Ssid}\"" : "(hidden SSID)";
+                if (w.Interface.Length > 0) ssid += $"   on {w.Interface}";
+                group.Add(CheckStatus.Info, "Wi-Fi network (SSID)", ssid);
+
+                if (w.Bssid.Length > 0)
+                {
+                    var extra = new List<string>();
+                    if (w.Radio.Length > 0) extra.Add(w.Radio);
+                    if (w.Band.Length > 0) extra.Add(w.Band);
+                    if (w.Channel.Length > 0) extra.Add($"ch {w.Channel}");
+                    if (w.Signal.Length > 0) extra.Add($"signal {w.Signal}");
+
+                    string oui = OuiFromMac(w.Bssid);
+                    string vendor = oui.Length > 0 ? LookupOuiVendor(oui) : "";
+
+                    string line = w.Bssid.ToUpperInvariant();
+                    if (vendor.Length > 0) line += $"   ({vendor})";
+                    if (extra.Count > 0) line += "   - " + string.Join(", ", extra);
+                    group.Add(CheckStatus.Info, "Wi-Fi access point (BSSID)", line);
+                }
             }
 
             // --- UPnP / SSDP: the richest source of make/model/firmware ---
@@ -877,6 +907,84 @@ $r | ConvertTo-Json -Compress -Depth 5
                 }
             }
             return null;
+        }
+
+        /// <summary>One connected wireless interface, as reported by <c>netsh wlan show interfaces</c>.</summary>
+        private sealed class WlanInfo
+        {
+            public string Interface = "";   // adapter/connection name (e.g. "Wi-Fi")
+            public string Ssid = "";        // the network name
+            public string Bssid = "";       // the access point's MAC - identifies the node on a mesh
+            public string Signal = "";      // e.g. "84%"
+            public string Radio = "";       // e.g. "802.11ax"
+            public string Band = "";        // e.g. "5 GHz"
+            public string Channel = "";     // e.g. "44"
+        }
+
+        /// <summary>
+        /// Parses <c>netsh wlan show interfaces</c> into one <see cref="WlanInfo"/> per wireless
+        /// interface. The "SSID" / "BSSID" / "Channel" labels are acronyms/loanwords Windows keeps
+        /// untranslated, so they are matched directly; signal is matched by its label and, as a
+        /// locale-independent fallback, by a value ending in "%". Returns an empty list when there
+        /// is no wireless interface or Wi-Fi is off.
+        /// </summary>
+        private static List<WlanInfo> QueryWlanInterfaces()
+        {
+            var list = new List<WlanInfo>();
+            string? output = RunCapture("netsh.exe", "wlan show interfaces", 8000);
+            if (string.IsNullOrWhiteSpace(output)) return list;
+
+            WlanInfo? cur = null;
+            foreach (var raw in output.Replace("\r\n", "\n").Split('\n'))
+            {
+                string line = raw.Trim();
+                int colon = line.IndexOf(':');
+                if (colon <= 0) continue;
+
+                string key = line.Substring(0, colon).Trim();
+                string val = line.Substring(colon + 1).Trim();
+                if (val.Length == 0) continue;
+                string keyUp = key.ToUpperInvariant();
+
+                // "Name" begins each interface block. On a localized Windows the label may differ;
+                // fall back to opening a block lazily when SSID/BSSID arrive with none open.
+                if (keyUp == "NAME")
+                {
+                    cur = new WlanInfo { Interface = val };
+                    list.Add(cur);
+                    continue;
+                }
+
+                bool isField = keyUp is "SSID" or "BSSID" or "SIGNAL" or "RADIO TYPE" or "BAND" or "CHANNEL";
+                if (cur == null && (isField || val.EndsWith("%")))
+                {
+                    cur = new WlanInfo();
+                    list.Add(cur);
+                }
+                if (cur == null) continue;
+
+                switch (keyUp)
+                {
+                    case "SSID":       cur.Ssid = val; break;
+                    case "BSSID":      cur.Bssid = val; break;
+                    case "SIGNAL":     cur.Signal = val; break;
+                    case "RADIO TYPE": cur.Radio = val; break;
+                    case "BAND":       cur.Band = val; break;
+                    case "CHANNEL":    cur.Channel = val; break;
+                    default:
+                        if (cur.Signal.Length == 0 && val.EndsWith("%")) cur.Signal = val;  // localized "Signal" label
+                        break;
+                }
+            }
+            return list;
+        }
+
+        /// <summary>Returns the "AA-BB-CC" OUI prefix of a colon/dash MAC string, or "" if unparseable.</summary>
+        private static string OuiFromMac(string mac)
+        {
+            var parts = mac.Split(new[] { ':', '-' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 3) return "";
+            return $"{parts[0]}-{parts[1]}-{parts[2]}".ToUpperInvariant();
         }
 
         private static IPAddress? GetPrimaryDns()

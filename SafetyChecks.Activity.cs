@@ -7,7 +7,7 @@ using System.IO;
 using System.Linq;
 using Microsoft.Data.Sqlite;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// App launch activity (the Activity tab). Windows Search keeps an app-usage index in a
@@ -59,7 +59,7 @@ namespace BrowseSafe
             if (File.Exists(src))
             {
                 // Stage a private copy in Temp to avoid contending with Windows Search for the file.
-                string temp = Path.Combine(Path.GetTempPath(), $"AppsIndex_bsafe_{Guid.NewGuid():N}.db");
+                string temp = Path.Combine(Path.GetTempPath(), $"AppsIndex_b4browse_{Guid.NewGuid():N}.db");
                 string[] sidecars = { "", "-wal", "-shm" };
                 try
                 {

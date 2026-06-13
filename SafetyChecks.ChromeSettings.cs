@@ -8,7 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Chrome settings matrix (the Settings tab). Builds a pivot of settings (rows) against
@@ -193,7 +193,7 @@ namespace BrowseSafe
             string src = Path.Combine(profileDir, "Login Data");
             if (!File.Exists(src)) return null;
 
-            string temp = Path.Combine(Path.GetTempPath(), $"LoginData_bsafe_{Guid.NewGuid():N}.db");
+            string temp = Path.Combine(Path.GetTempPath(), $"LoginData_b4browse_{Guid.NewGuid():N}.db");
             string[] sidecars = { "", "-wal", "-shm" };
             try
             {

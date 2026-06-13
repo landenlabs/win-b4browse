@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Services tab - a Windows service.</summary>
     public sealed class ServiceInfo

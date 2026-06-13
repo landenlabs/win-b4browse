@@ -7,7 +7,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Windows Task Scheduler entries (the Scheduled tab). Scheduled tasks are one of the
@@ -100,7 +100,7 @@ $ErrorActionPreference='SilentlyContinue'
 
         /// <summary>
         /// Enables or disables a scheduled task via <c>Enable-/Disable-ScheduledTask</c>. The spawned
-        /// PowerShell inherits this process's privileges, so it succeeds only when Browse Safe is
+        /// PowerShell inherits this process's privileges, so it succeeds only when B4 Browse is
         /// running elevated (and even then some protected <c>\Microsoft\Windows\</c> tasks owned by
         /// TrustedInstaller may refuse). Never throws; returns (ok, message) for the UI to display.
         /// </summary>

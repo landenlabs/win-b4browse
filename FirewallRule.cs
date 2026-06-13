@@ -1,6 +1,6 @@
 // Copyright (c) 2026 LanDen Labs - Dennis Lang
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Firewall tab - a single Windows Firewall rule parsed
     /// from the registry rule store, with the result of the hijack audit.</summary>

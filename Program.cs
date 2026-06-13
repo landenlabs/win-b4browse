@@ -6,18 +6,18 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
-    /// Browse Safe - confirms the machine is in a safe state before browsing.
+    /// B4 Browse - confirms the machine is in a safe state before browsing.
     ///
-    /// GUI:        BrowseSafe.exe
-    /// Headless:   BrowseSafe.exe --run &lt;scope&gt; [--out &lt;file&gt;]
+    /// GUI:        B4Browse.exe
+    /// Headless:   B4Browse.exe --run &lt;scope&gt; [--out &lt;file&gt;]
     ///               scope = scan | chrome | services | processes | startup |
     ///                       installed | devices | events | all
-    ///             BrowseSafe.exe --report        (alias for --run scan)
-    ///             BrowseSafe.exe --inventory     (alias for --run all)
-    ///             BrowseSafe.exe --help          (show usage and exit)
+    ///             B4Browse.exe --report        (alias for --run scan)
+    ///             B4Browse.exe --inventory     (alias for --run all)
+    ///             B4Browse.exe --help          (show usage and exit)
     ///
     /// Author: Dennis Lang - LanDen Labs - 2026
     /// </summary>
@@ -63,7 +63,7 @@ namespace BrowseSafe
         private const int ATTACH_PARENT_PROCESS = -1;
 
         /// <summary>
-        /// BrowseSafe is a GUI-subsystem (WinExe) app, so it is not attached to the
+        /// B4Browse is a GUI-subsystem (WinExe) app, so it is not attached to the
         /// console that launched it and Console output is otherwise discarded. Attach to
         /// the parent console (if any) and rebind stdout/stderr so the headless and
         /// --help text appears in the terminal. A no-op when launched without a console
@@ -94,11 +94,11 @@ namespace BrowseSafe
 {AppInfo.Copyright}
 
 USAGE:
-  BrowseSafe.exe                 Launch the GUI (default; no arguments).
-  BrowseSafe.exe --run <scope>   Run checks headless and print a text report.
-  BrowseSafe.exe --report        Alias for: --run scan
-  BrowseSafe.exe --inventory     Alias for: --run all
-  BrowseSafe.exe --help          Show this help and exit.
+  B4Browse.exe                 Launch the GUI (default; no arguments).
+  B4Browse.exe --run <scope>   Run checks headless and print a text report.
+  B4Browse.exe --report        Alias for: --run scan
+  B4Browse.exe --inventory     Alias for: --run all
+  B4Browse.exe --help          Show this help and exit.
 
 OPTIONS:
   --run <scope>     Which checks to run. Defaults to 'all' if <scope> is omitted.
@@ -109,9 +109,9 @@ SCOPES:
   {scopes}
 
 EXAMPLES:
-  BrowseSafe.exe --run scan
-  BrowseSafe.exe --run events --out events.txt
-  BrowseSafe.exe --report");
+  B4Browse.exe --run scan
+  B4Browse.exe --run events --out events.txt
+  B4Browse.exe --report");
         }
 
         static string? OutPath(string[] args)

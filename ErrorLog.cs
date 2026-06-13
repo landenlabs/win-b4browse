@@ -6,7 +6,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>How a background action failed - drives the colour/grouping in the viewer.</summary>
     public enum ErrorCategory

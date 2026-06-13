@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>How a column exposes an interactive filter in the grid's filter bar.</summary>
     public enum ColumnFilterKind { None, Dropdown, Regex }
@@ -568,7 +568,7 @@ namespace BrowseSafe
             }
             catch (Exception ex)
             {
-                CopyableMessageBox.Show(this, $"Could not open '{uri}': {ex.Message}", "Browse Safe",
+                CopyableMessageBox.Show(this, $"Could not open '{uri}': {ex.Message}", "B4 Browse",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }

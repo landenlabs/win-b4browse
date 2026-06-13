@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Devices tab - a signed PnP driver.</summary>
     public sealed class DeviceDriver

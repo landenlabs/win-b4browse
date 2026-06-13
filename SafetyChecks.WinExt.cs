@@ -7,7 +7,7 @@ using System.IO;
 using System.Linq;
 using Microsoft.Win32;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// File Explorer shell-extension audit (the Win Extn tab). Explorer loads third-party COM

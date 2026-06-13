@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Events tab - a recent Windows Event Log entry.</summary>
     public sealed class EventItem

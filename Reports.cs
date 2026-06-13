@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Central catalog mapping a scope key to its check producers, plus plain-text
@@ -68,7 +68,7 @@ namespace BrowseSafe
                 : Catalog.Where(c => c.Key.Equals(scope, StringComparison.OrdinalIgnoreCase)).ToArray();
 
             var sb = new StringBuilder();
-            sb.AppendLine($"Browse Safe report  -  scope: {scope}  -  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"B4 Browse report  -  scope: {scope}  -  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine(new string('=', 70));
 
             int total = sections.Length;

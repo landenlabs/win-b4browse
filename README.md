@@ -15,9 +15,9 @@
   </tr>
 </table>
 
-# Browse Safe
+# B4 Browse
 
-**Browse Safe** is a small Windows desktop utility that helps you answer two questions before you trust your machine to browse the web:
+**B4 Browse** is a small Windows desktop utility that helps you answer two questions before you trust your machine to browse the web:
 
 1. **Is my network configuration safe?** — Confirm there is no rogue proxy in the path and that DNS resolution is not being spoofed or silently redirected.
 2. **Has anything changed that shouldn't have?** — Surface files, extensions, programs, processes, services, and drivers that were **modified recently but don't line up with a Windows patch / update date**. A binary that changed last Tuesday when Windows Update didn't run that week is exactly the kind of thing worth a second look.
@@ -105,7 +105,7 @@ A built-in **Links** tab collects quick references — Chrome Safety Check, Wind
 ## Usage
 
 - Requires **.NET 10** (`net10.0-windows`).
-- Build with Visual Studio or `dotnet build`, then run `BrowseSafe.exe`. The Safety Scan runs automatically on first show.
+- Build with Visual Studio or `dotnet build`, then run `B4Browse.exe`. The Safety Scan runs automatically on first show.
 - Use **Launch Chrome** to open the browser, and **Email this tab (Chrome)** to share a scan result.
 
 ### Command-line options
@@ -114,19 +114,19 @@ Run with no arguments to launch the GUI. The headless modes run the same checks 
 
 | Invocation | Effect |
 | --- | --- |
-| `BrowseSafe.exe` | Launch the GUI (default). |
-| `BrowseSafe.exe --run <scope>` | Run the checks for `<scope>` headless and print a text report. Defaults to `all` if `<scope>` is omitted. |
-| `BrowseSafe.exe --report` | Alias for `--run scan`. |
-| `BrowseSafe.exe --inventory` | Alias for `--run all`. |
-| `BrowseSafe.exe --out <file>` | Also write the report text to `<file>` (headless modes only). |
-| `BrowseSafe.exe --help` | Show usage and exit. Also `-h`, `-?`, `/?`. |
+| `B4Browse.exe` | Launch the GUI (default). |
+| `B4Browse.exe --run <scope>` | Run the checks for `<scope>` headless and print a text report. Defaults to `all` if `<scope>` is omitted. |
+| `B4Browse.exe --report` | Alias for `--run scan`. |
+| `B4Browse.exe --inventory` | Alias for `--run all`. |
+| `B4Browse.exe --out <file>` | Also write the report text to `<file>` (headless modes only). |
+| `B4Browse.exe --help` | Show usage and exit. Also `-h`, `-?`, `/?`. |
 
 **Scopes:** `scan`, `dns`, `patches`, `chrome`, `services`, `processes`, `startup`, `installed`, `devices`, `events`, `firewall`, `all`.
 
 ```bat
-BrowseSafe.exe --run scan
-BrowseSafe.exe --run events --out events.txt
-BrowseSafe.exe --report
+B4Browse.exe --run scan
+B4Browse.exe --run events --out events.txt
+B4Browse.exe --report
 ```
 
 > Note: the Security event log requires Administrator to read, so `--run events` (and the Events tab) will omit those entries unless run elevated.
@@ -150,4 +150,4 @@ Licensed under the **Apache License, Version 2.0**. See [LICENSE](LICENSE) for t
 ## Author
 
 **Dennis Lang** — LanDen Labs (2026)
-<https://github.com/landenlabs/win-browse-safe>
+<https://github.com/landenlabs/win-b4-browse>

@@ -7,7 +7,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Runtime.InteropServices;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Back up and remove Chrome extension folders (used by the Chrome tab's
@@ -29,12 +29,12 @@ namespace BrowseSafe
 
         /// <summary>
         /// Zips every extension folder (supported and unsupported, all profiles) into
-        /// <c>bsafe-extension-backup.zip</c> in the Downloads folder. Best-effort: a locked or
+        /// <c>b4browse-extension-backup.zip</c> in the Downloads folder. Best-effort: a locked or
         /// unreadable file is skipped; a fatal error is returned in <c>Error</c>.
         /// </summary>
         public static (string ZipPath, int Count, string? Error) BackupExtensions(List<ChromeExtension> all)
         {
-            string zipPath = Path.Combine(GetDownloadsFolder(), "bsafe-extension-backup.zip");
+            string zipPath = Path.Combine(GetDownloadsFolder(), "b4browse-extension-backup.zip");
             int count = 0;
             try
             {

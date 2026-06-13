@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Reconstructs recent "awake" periods (boot/wake -> sleep/shutdown) from the System

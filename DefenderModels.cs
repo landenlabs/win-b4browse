@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Microsoft Defender's system-wide protection state and database/scan status, read from WMI

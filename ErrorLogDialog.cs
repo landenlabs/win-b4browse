@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Modal viewer for <see cref="ErrorLog"/> - the background-action failures (PowerShell

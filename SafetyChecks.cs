@@ -13,7 +13,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// All of the diagnostic logic. Every public method returns a populated

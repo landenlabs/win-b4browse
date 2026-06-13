@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Windows System Restore points (the Restores tab; requires administrator). These are a

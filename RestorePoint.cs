@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Restores tab - a Windows System Restore point.</summary>
     public sealed class RestorePoint

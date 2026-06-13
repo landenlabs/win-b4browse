@@ -1,6 +1,6 @@
 // Copyright (c) 2026 LanDen Labs - Dennis Lang
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the DNS tab - an entry in the Windows resolver cache.</summary>
     public sealed class DnsCacheEntry

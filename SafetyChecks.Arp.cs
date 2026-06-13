@@ -6,7 +6,7 @@ using System.Linq;
 using System.Net;
 using System.Threading;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Local IPv4 ARP / neighbor cache: the live layer-2 map of IP -> MAC for the

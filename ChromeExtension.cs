@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Chrome Extensions tab.</summary>
     public sealed class ChromeExtension

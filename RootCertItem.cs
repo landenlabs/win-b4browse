@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Root CAs tab - a certificate in a trusted-root store.</summary>
     public sealed class RootCertItem

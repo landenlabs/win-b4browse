@@ -2,7 +2,7 @@
 
 using System.Collections.Generic;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>Severity / outcome of a single check.</summary>
     public enum CheckStatus

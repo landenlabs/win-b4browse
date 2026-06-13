@@ -3,7 +3,7 @@
 @rem 
 
 echo ==index
-codebase-memory-mcp cli index_repository "{\"repo_path\":\"C:\\\\opt\\\\projects\\\\projects-c#\\\\browse-safe\"}" 
+codebase-memory-mcp cli index_repository "{\"repo_path\":\"C:\\\\opt\\\\projects\\\\projects-c#\\\\b4-browse\"}" 
 
 
 echo == list index projects

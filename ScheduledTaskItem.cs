@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Scheduled tab - a Windows Task Scheduler entry.</summary>
     public sealed class ScheduledTaskItem

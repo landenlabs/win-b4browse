@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// One reconstructed "awake" interval - from a boot/wake to the next sleep/shutdown -

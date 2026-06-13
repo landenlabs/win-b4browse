@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Processes tab - a running process.</summary>
     public sealed class ProcessItem

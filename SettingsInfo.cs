@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Plain-language descriptions for every row of the Settings tab (the Chrome settings matrix).
@@ -72,7 +72,7 @@ namespace BrowseSafe
                 "When on, Chrome automatically signs you in to sites using a saved password without asking " +
                 "first. Turning it off makes Chrome confirm before using a stored credential."),
             new("Passwords & Autofill", "Saved passwords (count)",
-                "How many passwords this profile has stored in Chrome's password manager. Browse Safe only " +
+                "How many passwords this profile has stored in Chrome's password manager. B4 Browse only " +
                 "counts the rows - it never reads, decrypts, or displays any password or the site it " +
                 "belongs to. A surprisingly large count on an unfamiliar profile is worth a look."),
             new("Passwords & Autofill", "Autofill addresses",

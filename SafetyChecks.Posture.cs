@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Management;
 using Microsoft.Win32;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Report producers for the Patches and Firewall tabs. The GUI tabs render their
@@ -155,6 +155,14 @@ namespace BrowseSafe
                 $"{patches.Count} update(s) installed; newest {patches[0].Installed:yyyy-MM-dd}.");
 
             return group;
+        }
+
+        /// <summary>Install date of the most recent Windows update (newest QFE entry), or null if none
+        /// could be read. Cheap, self-contained read used by the toolbar's "Patched:" baseline readout.</summary>
+        public static DateTime? MostRecentPatchDate()
+        {
+            var patches = GetWindowsPatches();
+            return patches.Count > 0 ? patches[0].Installed : null;
         }
 
         private static List<(string Id, DateTime Installed, string Desc, int DaysOld)> GetWindowsPatches()

@@ -10,7 +10,7 @@ using System.Net.NetworkInformation;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Main window: an overall-verdict banner, a toolbar, a collapsible left panel
@@ -26,6 +26,7 @@ namespace BrowseSafe
         private readonly Button _copyButton;
         private readonly Button _printButton;
         private Label _sysInfo = null!;   // toolbar watermark: Windows edition / version / install date
+        private Label _patchInfo = null!; // toolbar (right): "Patched: <date>" - the most recent Windows update
         private readonly ToolTip _tips = new();
         private readonly Panel _leftPanel;
         private readonly TabControl _tabs;
@@ -34,6 +35,8 @@ namespace BrowseSafe
         private Panel _toolbar = null!;
         private Label _leftHeader = null!;
         private Panel _leftBottom = null!;
+        private Button _introButton = null!;   // pastel "Introduction" button pinned above the left panel
+        private Image? _introIcon;             // app icon bitmap shown as a banner in the Intro Help
 
         // Bottom status bar: elevation + network indicators (left) + font-scale control (right).
         private Panel _statusBar = null!;
@@ -60,7 +63,7 @@ namespace BrowseSafe
         public MainForm()
         {
             // Version and build date come from AppInfo, which set-version.ps1 keeps in sync.
-            Text = $"Browse Safe - Chrome Safety Check - {AppInfo.Version} - LanDen Labs  {AppInfo.BuildDate}";
+            Text = $"B4 Browse - Chrome Safety Check - {AppInfo.Version} - LanDen Labs  {AppInfo.BuildDate}";
             // Window/taskbar icon. Loaded from the embedded multi-resolution icon.ico so it
             // works inside the single-file exe; ExtractAssociatedIcon is only a last resort
             // (it is unreliable against a compressed single-file apphost).
@@ -96,14 +99,15 @@ namespace BrowseSafe
             var toolbar = _toolbar;
             _toggleButton = new Button
             {
-                Text = "◀ Hide tools",
-                Width = 110,
+                Text = "◀ Links",
+                Width = 84,
                 Height = 28,
                 Left = 8,
                 Top = 7,
                 FlatStyle = FlatStyle.System,
             };
             _toggleButton.Click += (_, _) => ToggleLeftPanel();
+            _tips.SetToolTip(_toggleButton, "Show / hide the side panel of Windows Security and drill-down links");
 
             // Launch Chrome now lives in the left tool panel (added after the Security
             // shortcuts below); styled to match those buttons.
@@ -166,8 +170,23 @@ namespace BrowseSafe
             _sysInfo.Click += (_, _) => WindowsInfo.OpenAbout();
             _tips.SetToolTip(_sysInfo, "This PC - open Windows Settings › About");
 
+            // Most-recent Windows patch date, right-justified by the icon buttons. A core idea of the
+            // app is spotting changes newer than the last patch, so the baseline date sits up top.
+            // Filled asynchronously (WMI read) in OnShown; hidden until then.
+            _patchInfo = new Label
+            {
+                AutoSize = true,
+                Text = "",
+                Font = new Font("Segoe UI", 9f, FontStyle.Italic),
+                ForeColor = Theme.Subtle,
+                Visible = false,
+            };
+            _tips.SetToolTip(_patchInfo,
+                "Date of the most recent Windows update - use it as a baseline: items on the other tabs that changed after this date, and weren't installed by you, are worth a review");
+
             toolbar.Controls.Add(_toggleButton);
             toolbar.Controls.Add(_sysInfo);
+            toolbar.Controls.Add(_patchInfo);
             toolbar.Controls.Add(_emailButton);
             toolbar.Controls.Add(_copyButton);
             toolbar.Controls.Add(_printButton);
@@ -270,8 +289,8 @@ namespace BrowseSafe
                 Cursor = Cursors.Hand,
                 Font = new Font("Segoe UI", 9f, FontStyle.Bold),
             };
-            aboutButton.Click += (_, _) => { try { var f = new AboutForm(); f.Show(); } catch { CopyableMessageBox.Show(this, "Browse Safe - Chrome Safety Check\n\nA small tool to inspect Chrome, extensions, and local system indicators relevant to browsing safety.", "About Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Information); } };
-            tip.SetToolTip(aboutButton, "About Browse Safe");
+            aboutButton.Click += (_, _) => { try { var f = new AboutForm(); f.Show(); } catch { CopyableMessageBox.Show(this, "B4 Browse - Chrome Safety Check\n\nA small tool to inspect Chrome, extensions, and local system indicators relevant to browsing safety.", "About B4 Browse", MessageBoxButtons.OK, MessageBoxIcon.Information); } };
+            tip.SetToolTip(aboutButton, "About B4 Browse");
 
             _leftBottom.Controls.Add(themeIcon);
             _leftBottom.Controls.Add(themeLabel);
@@ -279,9 +298,36 @@ namespace BrowseSafe
 
             // Note: theme icon intentionally left unmodified so it always displays the original asset.
 
+            // "Introduction" button pinned to the very top of the left panel - a soft pastel-blue
+            // call-out that opens the welcome / overview Help. Hosted in a small padded panel so it
+            // sits above the "Windows Security" header (docked Top, added last = outermost edge).
+            var introHost = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 50,
+                BackColor = Theme.Panel,
+                Padding = new Padding(10, 8, 10, 4),
+            };
+            _introButton = new Button
+            {
+                Text = "ℹ  Introduction",
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                TextAlign = ContentAlignment.MiddleCenter,
+                Font = new Font("Segoe UI", 10.5f, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+            };
+            // Derive a crisp banner bitmap from the app icon (nearest 64px frame) for the Intro page.
+            try { if (Icon != null) _introIcon = new Icon(Icon, new Size(64, 64)).ToBitmap(); } catch { }
+            _introButton.Click += (_, _) => HelpUi.Show(this, TabHelp.Intro with { Header = _introIcon });
+            _tips.SetToolTip(_introButton, "What B4 Browse does and how to use the tabs");
+            introHost.Controls.Add(_introButton);
+            StyleIntroButton();   // pastel colours, re-applied on theme change by ApplyThemeColors
+
             _leftPanel.Controls.Add(flow);
             _leftPanel.Controls.Add(_leftBottom);
             _leftPanel.Controls.Add(leftHeader);
+            _leftPanel.Controls.Add(introHost);
 
             // -- Tabs (owner-drawn so they can be colour-coded by worst state) --
             _tabs = new TabControl
@@ -321,7 +367,7 @@ namespace BrowseSafe
             if (Elevation.IsAdmin)
                 AddViewTab("Restores", "restores", TabViews.BuildRestores());
 
-            AddViewTab("Links", "links", TabViews.BuildLinks());
+            AddViewTab("Tools", "links", TabViews.BuildLinks());
 
             BuildStatusBar();
 
@@ -561,6 +607,7 @@ namespace BrowseSafe
             BackColor = Theme.Window;
             _toolbar.BackColor = Theme.Toolbar;
             _sysInfo.ForeColor = Theme.Subtle;
+            _patchInfo.ForeColor = Theme.Subtle;
 
             _leftPanel.BackColor = Theme.Panel;
             _leftBottom.BackColor = Theme.Panel;
@@ -577,6 +624,21 @@ namespace BrowseSafe
 
             // Explicitly paint every button (toolbar, left panel, and inside each tab view).
             Theme.StyleButtons(this);
+            StyleIntroButton();   // restore the Intro button's pastel after the generic repaint
+        }
+
+        /// <summary>Paints the left-panel "Introduction" button in a soft, theme-aware pastel blue so it
+        /// stands out from the neutral toolbar buttons. Called after <see cref="Theme.StyleButtons"/>,
+        /// which would otherwise repaint it in the standard button colours.</summary>
+        private void StyleIntroButton()
+        {
+            if (_introButton == null) return;
+            _introButton.UseVisualStyleBackColor = false;
+            _introButton.BackColor = Theme.IsDark ? Color.FromArgb(40, 66, 100) : Color.FromArgb(208, 228, 250);
+            _introButton.ForeColor = Theme.IsDark ? Color.FromArgb(205, 225, 250) : Color.FromArgb(20, 45, 85);
+            _introButton.FlatAppearance.BorderColor = Theme.IsDark ? Color.FromArgb(78, 116, 165) : Color.FromArgb(150, 190, 235);
+            _introButton.FlatAppearance.BorderSize = 1;
+            if (_introButton.Parent != null) _introButton.Parent.BackColor = Theme.Panel;
         }
 
         /// <summary>The full safety scan, as labelled steps rendered incrementally.</summary>
@@ -643,6 +705,29 @@ namespace BrowseSafe
         {
             base.OnShown(e);
             _ = _scanView.RunAsync(); // auto-run the initial tab
+            LoadPatchDate();          // fill the toolbar "Patched:" readout off the UI thread
+        }
+
+        /// <summary>Reads the most-recent Windows patch date on a background thread (WMI) and shows it
+        /// in the toolbar as "Patched: Fri Jun-12" - the baseline date for spotting newer changes.</summary>
+        private void LoadPatchDate()
+        {
+            _ = Task.Run(() =>
+            {
+                DateTime? d = SafetyChecks.MostRecentPatchDate();
+                if (d == null || !IsHandleCreated) return;
+                try
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        _patchInfo.Text = "Patched: " +
+                            d.Value.ToString("ddd MMM-dd", System.Globalization.CultureInfo.InvariantCulture);
+                        _patchInfo.Visible = true;
+                        LayoutToolbarRight();
+                    }));
+                }
+                catch { /* form closing */ }
+            });
         }
 
         /// <summary>Lazily run a tab's checks the first time it is opened.</summary>
@@ -716,7 +801,7 @@ namespace BrowseSafe
         private void ToggleLeftPanel()
         {
             _leftPanel.Visible = !_leftPanel.Visible;
-            _toggleButton.Text = _leftPanel.Visible ? "◀ Hide tools" : "▶ Show tools";
+            _toggleButton.Text = _leftPanel.Visible ? "◀ Links" : "▶ Links";
         }
 
         private void ToggleTheme()
@@ -805,7 +890,7 @@ namespace BrowseSafe
             }
 
             // Show the (modal) print dialog after the spinner stops.
-            if (reportText != null) PrintReport(reportText, $"Browse Safe - {tabName}");
+            if (reportText != null) PrintReport(reportText, $"B4 Browse - {tabName}");
         }
 
         /// <summary>
@@ -878,12 +963,21 @@ namespace BrowseSafe
             _copyButton.Left = Math.Max(0, _emailButton.Left - _copyButton.Width - 6);
             _printButton.Left = Math.Max(0, _copyButton.Left - _printButton.Width - 6);
 
-            // Centre the system-info watermark in the gap between the toggle button and the
-            // right-hand icon buttons; left-align (and let it clip) if the gap is too narrow.
+            // "Patched: <date>" sits right-justified just left of the three icon buttons.
+            if (_patchInfo is { Visible: true })
+            {
+                _patchInfo.Top = (_toolbar.ClientSize.Height - _patchInfo.Height) / 2;
+                _patchInfo.Left = Math.Max(0, _printButton.Left - _patchInfo.Width - 14);
+            }
+
+            // Centre the system-info watermark in the gap between the toggle button and whatever is
+            // next on the right (the patch readout, or the icon buttons); left-align (and let it
+            // clip) if the gap is too narrow.
             if (_sysInfo is { Visible: true })
             {
+                int rightEdge = _patchInfo is { Visible: true } ? _patchInfo.Left : _printButton.Left;
                 int availLeft = _toggleButton.Right + 12;
-                int availRight = _printButton.Left - 12;
+                int availRight = rightEdge - 12;
                 _sysInfo.Top = (_toolbar.ClientSize.Height - _sysInfo.Height) / 2;
                 int gap = availRight - availLeft;
                 _sysInfo.Left = gap > _sysInfo.Width
@@ -901,7 +995,7 @@ namespace BrowseSafe
             catch (Exception ex)
             {
                 CopyableMessageBox.Show(this, $"Could not open '{uri}': {ex.Message}",
-                    "Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    "B4 Browse", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -920,7 +1014,7 @@ namespace BrowseSafe
                 catch (Exception ex)
                 {
                     CopyableMessageBox.Show(this, "Could not launch Chrome: " + ex.Message,
-                        "Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        "B4 Browse", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 }
             }
         }

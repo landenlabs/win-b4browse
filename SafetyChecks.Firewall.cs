@@ -7,7 +7,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Firewall rule enumeration and a hijack-focused audit. Rules are read straight

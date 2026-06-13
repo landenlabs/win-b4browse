@@ -1,8 +1,8 @@
 
-06/08/2026 11:14 PM           534,016     .\bin\Debug\net10.0-windows\BrowseSafe.exe
-06/07/2026 09:39 PM           534,016     .\bin\Release\net10.0-windows\win-x64\BrowseSafe.exe
+06/08/2026 11:14 PM           534,016     .\bin\Debug\net10.0-windows\B4Browse.exe
+06/07/2026 09:39 PM           534,016     .\bin\Release\net10.0-windows\win-x64\B4Browse.exe
 04/29/2026 09:08 PM            71,552     .\bin\Release\net10.0-windows\win-x64\createdump.exe
-06/07/2026 09:39 PM        55,068,300     .\bin\Release\net10.0-windows\win-x64\publish\BrowseSafe.exe
+06/07/2026 09:39 PM        55,068,300     .\bin\Release\net10.0-windows\win-x64\publish\B4Browse.exe
 06/08/2026 11:14 PM           534,016     .\obj\Debug\net10.0-windows\apphost.exe
 06/07/2026 09:39 PM           534,016     .\obj\Release\net10.0-windows\win-x64\apphost.exe
 06/07/2026 09:39 PM        10,343,424     .\obj\Release\net10.0-windows\win-x64\singlefilehost.exe

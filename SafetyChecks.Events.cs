@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Recent Windows Event Log scan: surfaces critical/error events plus a curated

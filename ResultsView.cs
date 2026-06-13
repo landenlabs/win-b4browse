@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>A tab content view that can be (re)run, with lazy first-run support.</summary>
     public interface ITabView
@@ -450,7 +450,7 @@ namespace BrowseSafe
             catch (Exception ex)
             {
                 CopyableMessageBox.Show(this, $"Could not open '{uri}': {ex.Message}",
-                    "Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    "B4 Browse", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
@@ -467,7 +467,7 @@ namespace BrowseSafe
             catch (Exception ex)
             {
                 CopyableMessageBox.Show(this, "Could not open hosts folder: " + ex.Message,
-                    "Browse Safe", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    "B4 Browse", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
     }

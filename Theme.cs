@@ -6,12 +6,12 @@ using System.Globalization;
 using System.IO;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// App light/dark theme via WinForms <see cref="Application.SetColorMode"/> plus an
     /// explicit colour palette (since the app sets many custom colours that the system
-    /// dark mode won't touch). Choice persisted to %LOCALAPPDATA%\BrowseSafe\theme.txt.
+    /// dark mode won't touch). Choice persisted to %LOCALAPPDATA%\B4Browse\theme.txt.
     /// </summary>
     public static class Theme
     {
@@ -96,11 +96,11 @@ namespace BrowseSafe
 
         private static string FilePath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "BrowseSafe", "theme.txt");
+            "B4Browse", "theme.txt");
 
         private static string ScaleFilePath => Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "BrowseSafe", "scale.txt");
+            "B4Browse", "scale.txt");
 
         public static void Load()
         {

@@ -12,7 +12,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Win32;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Inventory / posture checks shown on their own tabs: Chrome integrity,

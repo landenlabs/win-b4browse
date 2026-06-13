@@ -2,7 +2,7 @@
 
 using System.Collections.Generic;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// One column of the Settings matrix: either the enterprise-policy "Global" column or a

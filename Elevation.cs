@@ -5,7 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Principal;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Administrator-elevation helpers. The app ships with an <c>asInvoker</c> manifest, so it

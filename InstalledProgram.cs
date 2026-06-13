@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Installed tab - a registered program.</summary>
     public sealed class InstalledProgram

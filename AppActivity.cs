@@ -1,6 +1,6 @@
 // Copyright (c) 2026 LanDen Labs - Dennis Lang
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// One row of the Activity tab - an app and how often it has been launched, read from

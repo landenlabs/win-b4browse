@@ -9,7 +9,7 @@ using System.Net.Http;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Local system-integrity checks: clock accuracy against atomic time
@@ -28,7 +28,7 @@ namespace BrowseSafe
         };
 
         /// <summary>
-        /// The canonical Windows hosts file path. An optional BROWSESAFE_HOSTS
+        /// The canonical Windows hosts file path. An optional B4BROWSE_HOSTS
         /// environment variable overrides it (used for testing / scanning an
         /// alternate file).
         /// </summary>
@@ -36,7 +36,7 @@ namespace BrowseSafe
         {
             get
             {
-                string? overridePath = Environment.GetEnvironmentVariable("BROWSESAFE_HOSTS");
+                string? overridePath = Environment.GetEnvironmentVariable("B4BROWSE_HOSTS");
                 return !string.IsNullOrWhiteSpace(overridePath)
                     ? overridePath
                     : Environment.ExpandEnvironmentVariables(@"%SystemRoot%\System32\drivers\etc\hosts");

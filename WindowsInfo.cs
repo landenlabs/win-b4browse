@@ -4,7 +4,7 @@ using System;
 using System.Diagnostics;
 using Microsoft.Win32;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Read-only Windows edition / version / install-date facts for the toolbar watermark.

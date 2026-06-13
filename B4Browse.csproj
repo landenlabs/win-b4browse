@@ -6,8 +6,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>BrowseSafe</RootNamespace>
-    <AssemblyName>BrowseSafe</AssemblyName>
+    <RootNamespace>B4Browse</RootNamespace>
+    <AssemblyName>B4Browse</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>icon.ico</ApplicationIcon>
     <Version>6.06.09</Version>
@@ -15,7 +15,7 @@
     <!-- targeted runtime identifiers for publishing self-contained or RID-specific assets -->
     <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
     <Company>LanDen Labs</Company>
-    <Product>Browse Safe</Product>
+    <Product>B4 Browse</Product>
     <Description>Verifies the network and OS are in a safe state before running the Chrome browser.</Description>
     <!-- Application.SetColorMode / SystemColorMode are still experimental (WFO5001). -->
     <NoWarn>$(NoWarn);WFO5001</NoWarn>

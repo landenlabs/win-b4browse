@@ -6,7 +6,7 @@ using System.Media;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// A drop-in replacement for <see cref="MessageBox"/> whose message lives in a

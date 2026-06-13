@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// One row of the Downloads tab - per-application network usage totalled from the Windows

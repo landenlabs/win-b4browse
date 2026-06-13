@@ -42,7 +42,7 @@ jobs:
         if: ${{ env.CODE_SIGN_PFX_BASE64 != '' }}
         shell: pwsh
         run: |
-          $exe = "./artifacts/win-x64/BrowseSafe.exe"
+          $exe = "./artifacts/win-x64/B4Browse.exe"
 
           # Locate signtool from the Windows SDK on the runner (newest version, x64).
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
@@ -71,7 +71,7 @@ jobs:
         run: |
           $tag = '${{ github.ref_name }}'
           $outDir = "./artifacts/win-x64"
-          $zip = "./artifacts/BrowseSafe-$tag-win-x64.zip"
+          $zip = "./artifacts/B4Browse-$tag-win-x64.zip"
           if (Test-Path $zip) { Remove-Item $zip }
           Compress-Archive -Path "$outDir/*" -DestinationPath $zip -Force
 
@@ -83,4 +83,4 @@ jobs:
           body: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-          files: ./artifacts/BrowseSafe-${{ github.ref_name }}-win-x64.zip
+          files: ./artifacts/B4Browse-${{ github.ref_name }}-win-x64.zip

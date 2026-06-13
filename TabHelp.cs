@@ -1,6 +1,6 @@
 // Copyright (c) 2026 LanDen Labs - Dennis Lang
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>Authored Help text for every tab, shown by the toolbar Help button via
     /// <see cref="HelpUi.Show"/>. Body uses the light markup documented on <see cref="HelpInfo"/>
@@ -19,23 +19,164 @@ namespace BrowseSafe
             "- Click any column header to sort; click again to reverse.\n" +
             "- Press Refresh in the toolbar to reload the data.\n";
 
+        public static readonly HelpInfo Intro = new("Welcome to B4 Browse",
+            "# What B4 Browse does\n" +
+            "B4 Browse inspects your Windows PC for common signs of trouble and presents what it finds in " +
+            "colour-coded tabs, so anything suspicious stands out at a glance. It has two jobs:\n" +
+            "\n" +
+            "- Confirm the network path is clean - no rogue proxy, no DNS hijack or spoofing - before you browse.\n" +
+            "- Surface files, extensions, programs, processes, services and drivers that changed recently but " +
+            "don't line up with a Windows update - a place to focus when your PC starts behaving differently.\n" +
+            "\n" +
+            "Almost every tab only reads and reports. The few actions that change anything (flush the DNS cache, " +
+            "remove an unsupported extension) are clearly labelled and always ask first.\n" +
+            "\n" +
+            "# How to use it\n" +
+            "B4 Browse runs the Safety Scan automatically when it opens and shows an overall verdict in the " +
+            "banner at the top. From there, work through the tabs along the top.\n" +
+            "\n" +
+            "A good strategy when you suspect something changed on your machine:\n" +
+            "- Open the Patches tab and note the date Windows last updated its files. That is your reference point.\n" +
+            "- Visit the other tabs and look for items that changed AFTER that date but were not part of a Windows " +
+            "update - and not something you installed yourself.\n" +
+            "- Recently-changed items are highlighted (red = last 7 days, yellow = last 30 days), so they float to " +
+            "the top when you sort by Status or by date.\n" +
+            "\n" +
+            "An unexpected change that doesn't line up with a patch date, or with anything you did yourself, is " +
+            "worth a closer look.\n" +
+            "\n" +
+            "# Every tab has its own Help\n" +
+            "Each tab has a Help button that explains what it shows, what its colours and columns mean, and what " +
+            "its right-click actions do. Use those for the detail - this page is just the map.\n" +
+            "\n" +
+            "# Administrator rights\n" +
+            "A few tabs (Events, Downloads, Virus history, Restores) need Administrator rights to read their data. " +
+            "If one of those looks empty, use Run as Admin in the left panel to relaunch with elevation.\n" +
+            "\n" +
+            "# The tabs at a glance\n" +
+            "- Safety Scan - the startup network & security verdict: DNS, proxy, router, packet sniffers, and " +
+            "Windows Security state.\n" +
+            "- Patches - installed Windows updates, newest first; the reference date for judging the other tabs.\n" +
+            "- DNS (Domain Name System) - the live resolver cache; flags public names resolving to private IPs " +
+            "(possible hijack or captive portal).\n" +
+            "- ARP (Address Resolution Protocol) - the local IP-to-MAC neighbour cache; flags the shared-MAC " +
+            "pattern of ARP spoofing / man-in-the-middle.\n" +
+            "- Chrome - enabled Chrome extensions, plus a privacy & security audit (Safe Browsing, cookies, " +
+            "chrome.exe signature).\n" +
+            "- Settings - a matrix of Chrome settings across your profiles; highlights known-weak privacy choices.\n" +
+            "- Services - installed background services, flagged by how recently each one's program changed.\n" +
+            "- Processes - currently running processes, flagged by how recently each executable changed.\n" +
+            "- Startup - programs set to launch at login (a common foothold for unwanted software).\n" +
+            "- Scheduled - Task Scheduler entries with a hijack audit (temp-folder, living-off-the-land, hidden tasks).\n" +
+            "- Installed - installed programs (registry + winget), with any pending updates flagged.\n" +
+            "- Devices - installed device drivers; flags unsigned drivers and risky INF directives.\n" +
+            "- Win Extn - third-party File Explorer shell extensions that load inside explorer.exe.\n" +
+            "- Events - recent significant Windows event-log entries (errors and security-relevant events).\n" +
+            "- Awake - recent awake / sleep periods, reconstructed from power events.\n" +
+            "- Activity - how often each app has been launched, from Windows Search's usage index.\n" +
+            "- Downloads - per-app bytes received and sent (from SRUM); a high upload from an odd process is a " +
+            "possible data-exfiltration signal.\n" +
+            "- Root CAs - trusted root certificate authorities; flags new or unexpected roots that could enable " +
+            "silent HTTPS interception.\n" +
+            "- Firewall - firewall state and rules, with an audit for hole-punching / persistence rules.\n" +
+            "- Virus - Microsoft Defender protection state and its threat / scan history.\n" +
+            "- Restores - System Restore points; zero points or a disabled service is a ransomware indicator (admin only).\n" +
+            "- Links - curated links to security tools and references.\n");
+
         public static readonly HelpInfo Scan = new("Safety Scan",
-            "# What this shows\n" +
-            "Runs the full set of safety checks and prints a colour-coded report: each check is tagged " +
-            "[ PASS ], [ WARN ], [ FAIL ], or [ INFO ]. The overall verdict drives the window banner and " +
-            "the Safety Scan tab colour.\n" +
+            "# What this tab does\n" +
+            "The Safety Scan is the app's headline check. It runs a battery of network and OS safety probes " +
+            "and prints a colour-coded report: each result line is tagged [ PASS ], [ WARN ], [ FAIL ], or " +
+            "[ INFO ], and the worst result sets the overall verdict shown in the window banner and on this tab.\n" +
             "\n" +
-            "The other tabs drill into individual areas (patches, processes, services, startup, drivers, " +
-            "DNS, browser extensions, events, firewall). This tab is the at-a-glance summary.\n" +
+            "Run it first when you sit down to browse: it confirms the path between this PC and the internet " +
+            "is clean - no rogue proxy, no DNS hijack or spoof, no packet sniffer - and that Windows' own " +
+            "defences are switched on. Press [ Run Safety Checks ] to run (or re-run) it; each numbered " +
+            "section below appears as it finishes.\n" +
             "\n" +
-            "# Network sniffers / promiscuous mode\n" +
-            "The scan flags local packet capture: any adapter whose NDIS packet filter has the PROMISCUOUS " +
-            "bit set (the defining trait of a live capture), installed capture drivers (Npcap / WinPcap / " +
-            "pktmon), and running capture tools (Wireshark, dumpcap, tshark, tcpdump, ...).\n" +
+            "# The checks\n" +
+            "The report is organised into twelve numbered sections, run in this order:\n" +
+            "\n" +
+            "## 1. Current DNS Servers\n" +
+            "Lists the DNS server each active adapter is set to use, naming any well-known public resolver " +
+            "(Google, Cloudflare, Quad9, ...). A local/router address or a recognised public resolver is " +
+            "normal - this section is the informational baseline the later DNS checks build on.\n" +
+            "\n" +
+            "## 2. Connected Router\n" +
+            "Identifies your default gateway (the router): its IP, its MAC address and hardware vendor (from " +
+            "the OUI), and - when the router answers UPnP - its make, model and firmware. Knowing the " +
+            "gateway's real MAC helps you notice if it ever changes unexpectedly. On a Wi-Fi connection it " +
+            "also reports the network name (SSID) and the access point you're associated with (BSSID), with " +
+            "its signal and channel - so on a mesh of several nodes sharing one SSID you can tell which node " +
+            "you're actually on.\n" +
+            "\n" +
+            "## 3. Actual Upstream DNS Resolver\n" +
+            "Looks past the router to the resolver that actually answers out on the public internet, by asking " +
+            "a \"whoami\" DNS server which IP reached it. This reveals the true upstream resolver even when " +
+            "your router quietly forwards queries, so a resolver you didn't choose stands out.\n" +
+            "\n" +
+            "## 4. DNS Lookup Tests (public sites)\n" +
+            "Resolves a handful of well-known sites (Google, GitHub, Microsoft, Wikipedia, ...) and times each. " +
+            "A public site that resolves to a private or loopback address is flagged FAIL - the classic " +
+            "signature of DNS hijacking, a captive portal, or local blocking.\n" +
+            "\n" +
+            "## 5. Cross-Resolver DNS Comparison\n" +
+            "Resolves the same sites again through three independent public resolvers (Cloudflare, Quad9, " +
+            "Google) and compares their answers with your local result. Agreement is reassuring; a local " +
+            "answer that is private or bogus while the references agree points to tampering on your path. " +
+            "CDN and geographic differences are expected and labelled as such, not failures.\n" +
+            "\n" +
+            "## 6. Hosts File\n" +
+            "Reads C:\\Windows\\System32\\drivers\\etc\\hosts - the local file that can override DNS for any " +
+            "name. Entries that redirect external sites are surfaced, since malware and adware commonly plant " +
+            "them here. Use [ Open hosts folder ] to reveal the file in Explorer.\n" +
+            "\n" +
+            "## 7. E-mail (MX) DNS Tests\n" +
+            "Looks up the mail servers (MX records) for Gmail and Yahoo and verifies each designated host both " +
+            "belongs to the provider's real mail infrastructure and resolves to a public IP. A mismatch or a " +
+            "non-public address can indicate DNS tampering aimed at intercepting mail.\n" +
+            "\n" +
+            "## 8. Proxy Configuration\n" +
+            "Checks every place a proxy can hide - the WinINET per-user settings Chrome uses, a PAC " +
+            "auto-config URL, WPAD auto-detect, the HTTP(S)_PROXY environment variables, and what the system " +
+            "proxy resolves for a real request. An unexpected proxy can silently route and read all your " +
+            "traffic, so a manual proxy is flagged FAIL.\n" +
+            "\n" +
+            "## 9. Atomic Clock / Time Sync\n" +
+            "Compares your PC clock against public NTP time servers. A large skew breaks TLS certificate " +
+            "validation (HTTPS may fail or become easier to spoof) and can itself be a sign of tampering, so " +
+            "the measured offset is reported and flagged when it drifts too far.\n" +
+            "\n" +
+            "## 10. Windows Security Features\n" +
+            "Confirms the OS defences are on: User Account Control, SmartScreen, Microsoft Defender (or another " +
+            "registered antivirus) with its real-time protection and signature age, the firewall profiles, and " +
+            "Secure Boot. Anything core that is switched off is flagged.\n" +
+            "\n" +
+            "## 11. Network Sniffers / Promiscuous Mode\n" +
+            "Looks for local packet capture three ways: any adapter whose NDIS packet filter has the " +
+            "PROMISCUOUS bit set (the defining trait of a live capture, flagged FAIL), installed capture " +
+            "drivers (Npcap / WinPcap / the built-in pktmon), and running capture tools (Wireshark, dumpcap, " +
+            "tshark, tcpdump, ...).\n" +
+            "\n" +
+            "## 12. Network Adapters\n" +
+            "A compact table of your network adapters - enabled state, IPv4/IPv6 binding, and any non-standard " +
+            "bindings worth noting (capture filters, Zscaler, VPN, virtual switches). Informational only: it " +
+            "never changes the verdict, but it's a quick map of what is attached to the network.\n" +
+            "\n" +
+            "# Status tags\n" +
+            "- PASS - the check looks healthy.\n" +
+            "- WARN - worth a look; not necessarily a problem.\n" +
+            "- FAIL - a strong indicator something is wrong; the overall verdict turns red.\n" +
+            "- INFO - context rather than a pass/fail (baseline data such as the adapter list).\n" +
             "\n" +
             "# Special actions\n" +
-            "- Run Safety Checks - runs every check; groups render as each completes.\n" +
-            "- In the Hosts File section, click [ Open hosts folder ] to reveal the hosts file in Explorer.\n");
+            "- Run Safety Checks - runs every check; sections render as each one completes.\n" +
+            "- Open hosts folder - in the Hosts File section, reveals the hosts file in Explorer.\n" +
+            "\n" +
+            "# Note\n" +
+            "Some DNS sections are skipped with a WARN if a quick probe finds outbound DNS is being dropped " +
+            "(an aggressive firewall, a VPN filter, or a captive portal), so the scan returns in seconds " +
+            "instead of stalling. Re-run it once connectivity is restored.\n");
 
         public static readonly HelpInfo Virus = new("Virus Protection",
             "# What this shows\n" +
@@ -71,12 +212,33 @@ namespace BrowseSafe
 
         public static readonly HelpInfo Patches = new("Windows Patches",
             "# What this shows\n" +
-            "Installed Windows updates and hotfixes reported by WMI (Win32_QuickFixEngineering), newest first.\n" +
+            "Installed Windows updates and hotfixes reported by WMI (Win32_QuickFixEngineering), newest first. " +
+            "Read it two ways: that updates are arriving on a routine cadence (the sign of a healthy, " +
+            "maintained system), and - just as useful - the date of the most recent few updates.\n" +
+            "\n" +
+            "# Use the latest patch date as a baseline\n" +
+            "Each Windows update rewrites a batch of system files, so the date of the newest patch is a natural " +
+            "\"known-good\" reference point: most of what changed on disk around then changed because Windows " +
+            "updated it.\n" +
+            "\n" +
+            "Note the date of the last few patches, then visit the inventory tabs - Processes, Services, " +
+            "Startup, Scheduled, Installed, Devices, Win Extn, Root CAs - which each list items together with " +
+            "when they last changed. A program or component that changed NEWER than the latest patch, and that " +
+            "you didn't install or update yourself, merits a closer look: it changed outside the normal Windows " +
+            "update window.\n" +
+            "\n" +
+            "Those tabs already highlight recent changes (red = last 7 days, yellow = last 30 days), so sorting " +
+            "a tab by its date column floats anything newer than your patch baseline to the top.\n" +
             "\n" +
             "# Columns\n" +
             "- Installed - date the update was applied.\n" +
             "- HotFix ID - the KB identifier.\n" +
             "- DocLink   - opens the Microsoft article for that KB in your browser.\n" +
+            "\n" +
+            "# Note\n" +
+            "This list covers servicing updates that carry a KB number (cumulative and security updates, " +
+            "hotfixes). Some changes - feature updates, driver and Microsoft Store app updates - don't appear " +
+            "as KB rows here; the Installed, Devices and Activity tabs cover those.\n" +
             "\n" + Common);
 
         public static readonly HelpInfo Dns = new("DNS Resolver Cache",
@@ -155,12 +317,25 @@ namespace BrowseSafe
             "# Status\n" +
             "- Unsupported - a Manifest V2 (MV2) extension, which Chrome 138+ no longer supports.\n" +
             "- The Modified column is also tinted by recency.\n" +
+            "\n" +
+            "# The blue links\n" +
+            "> The blue links give you quick access to Chrome's matching feature or settings page. If your " +
+            "browser has more than one user profile, Chrome opens its profile selector first; the exact page " +
+            "address is also copied to your clipboard, so after you pick a profile you can paste it into the " +
+            "address bar to jump straight there.\n" +
+            ">\n" +
+            "> Steps:\n" +
+            "> 1. Click the blue link.\n" +
+            "> 2. Select your Chrome profile.\n" +
+            "> 3. Click in Chrome's address (URL) bar.\n" +
+            "> 4. Press Ctrl+V to paste the copied link.\n" +
+            "> 5. Press Enter.\n" +
             "\n" + Recency +
             "\n" +
             "# Special actions\n" +
             "- Remove unsupported - after confirmation, deletes the folders of all Manifest V2 " +
             "(Unsupported) extensions. It first backs up ALL extensions to " +
-            "Downloads\\bsafe-extension-backup.zip; close Chrome first for a clean removal.\n" +
+            "Downloads\\b4browse-extension-backup.zip; close Chrome first for a clean removal.\n" +
             "- Scan (header) - verify chrome.exe's signature or look it up on VirusTotal.\n" +
             "- Right-click a row to open the extension's folder or copy its path.\n" +
             "\n" + Common);
@@ -199,7 +374,7 @@ namespace BrowseSafe
             "picker instead of navigating, just paste (Ctrl+V) into the address bar.\n" +
             "- The saved-password count is a count only - the Login Data database is copied to a temp file " +
             "and the rows are counted; no password is read or decrypted.\n" +
-            "- Columns are fixed when the tab opens. A Chrome profile created while Browse Safe is running " +
+            "- Columns are fixed when the tab opens. A Chrome profile created while B4 Browse is running " +
             "won't get its own column until you restart the app (Refresh reloads values, not columns).\n" +
             "\n" + Common);
 
@@ -457,7 +632,7 @@ namespace BrowseSafe
             "\n" +
             "# Requires administrator\n" +
             "The SRUM database (C:\\Windows\\System32\\sru\\SRUDB.dat) lives under System32 and is held open " +
-            "by the Diagnostic Policy Service, so this tab is empty unless Browse Safe is run as " +
+            "by the Diagnostic Policy Service, so this tab is empty unless B4 Browse is run as " +
             "administrator. The live database is never touched: it is snapshotted to a temp copy with " +
             "esentutl, the throwaway copy is repaired if it was in a dirty-shutdown state, and only that " +
             "copy is read.\n" +
@@ -578,7 +753,7 @@ namespace BrowseSafe
             "the checkpoint date against any known infection window (e.g. Defender events) first.\n" +
             "\n" + Common);
 
-        public static readonly HelpInfo Links = new("Helpful Links",
+        public static readonly HelpInfo Links = new("Tools & Links",
             "# What this shows\n" +
             "A page of curated links to security tools and references (Chrome Safety Check, Windows Security, " +
             "VirusTotal, the Chrome extensions guide, and more).\n" +

@@ -6,12 +6,15 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>Title + body for a tab's Help dialog. The body uses a light markup:
-    /// a line starting "# " is a heading, "## " a sub-heading, "- "/"• " a bullet;
-    /// blank lines are preserved. http(s) URLs are auto-detected and clickable.</summary>
-    public sealed record HelpInfo(string Title, string Body);
+    /// a line starting "# " is a heading, "## " a sub-heading, "- "/"• " a bullet,
+    /// "> " a blue callout line (a lone ">" is a blank line within a callout);
+    /// blank lines are preserved. http(s) URLs are auto-detected and clickable.
+    /// <paramref name="Header"/>, when set, is shown centred as a small banner image above
+    /// the title (used by the Intro/welcome page to show the app icon).</summary>
+    public sealed record HelpInfo(string Title, string Body, Image? Header = null);
 
     /// <summary>Shared "Help" button factory and the modeless description dialog it opens.
     /// Reused by every tab (grids, the scan view, the firewall and links panels).</summary>
@@ -102,6 +105,26 @@ namespace BrowseSafe
             var pad = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 12, 14, 8), BackColor = Theme.Surface };
             pad.Controls.Add(body);
 
+            // Optional banner image (the app icon on the Intro page), centred above the text.
+            // A docked PictureBox is used rather than an inline RTF \pict blip: it is reliable
+            // across RichEdit versions, theme-aware, and never touches the clipboard.
+            if (info.Header != null)
+            {
+                var headerHost = new Panel { Dock = DockStyle.Top, Height = 76, BackColor = Theme.Surface };
+                var pic = new PictureBox
+                {
+                    Image = info.Header,
+                    SizeMode = PictureBoxSizeMode.Zoom,
+                    Width = 64, Height = 64, Top = 6,
+                    BackColor = Color.Transparent,
+                };
+                void CenterPic() => pic.Left = Math.Max(0, (headerHost.ClientSize.Width - pic.Width) / 2);
+                headerHost.Resize += (_, _) => CenterPic();
+                headerHost.Controls.Add(pic);
+                CenterPic();
+                pad.Controls.Add(headerHost);   // added after body: docks to the top, body fills below
+            }
+
             dlg.Controls.Add(pad);
             dlg.Controls.Add(bottom);
             dlg.AcceptButton = close;
@@ -171,6 +194,10 @@ namespace BrowseSafe
                     anchors[sub] = rtb.TextLength;   // start offset, before the heading is appended
                     Append(sub + "\n", heading, 10.5f, FontStyle.Bold);
                 }
+                else if (line.StartsWith("> "))
+                    Append(line.Substring(2) + "\n", Theme.Link, 10f, FontStyle.Regular);   // blue callout
+                else if (line == ">")
+                    Append("\n", subtle, 5f, FontStyle.Regular);                            // blank line within a callout
                 else if (line.StartsWith("- ") || line.StartsWith("• "))
                     Append("   •  " + line.Substring(2) + "\n", Theme.Text, 10f, FontStyle.Regular);
                 else

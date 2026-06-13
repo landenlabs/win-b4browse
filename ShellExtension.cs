@@ -2,7 +2,7 @@
 
 using System;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>One row of the Win Extn tab - a File Explorer shell extension (COM handler).</summary>
     public sealed class ShellExtension

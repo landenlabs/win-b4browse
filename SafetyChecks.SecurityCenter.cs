@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace BrowseSafe
+namespace B4Browse
 {
     /// <summary>
     /// Windows Security Center (<c>root\SecurityCenter2</c>) product registry: the authoritative

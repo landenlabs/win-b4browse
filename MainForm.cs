@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Printing;
 using System.IO;
+using System.Linq;
 using System.Net.NetworkInformation;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -29,11 +30,15 @@ namespace B4Browse
         private Label _patchInfo = null!; // toolbar (right): "Patched: <date>" - the most recent Windows update
         private readonly ToolTip _tips = new();
         private readonly Panel _leftPanel;
-        private readonly TabControl _tabs;
-        private readonly ResultsView _scanView;
+        private TreeView _nav = null!;                 // category tree (replaces the old tab strip)
+        private Panel _content = null!;                // hosts the selected section's view
+        private readonly Dictionary<Catalog.Section, Control> _views = new();   // lazily built + cached
+        private Catalog.Section? _current;             // the currently shown section
+        private Font _navBoldFont = null!;             // category-row font (owner-draw)
+        private ResultsView _scanView = null!;
         private readonly BusyOverlay _emailBusy = new();
         private Panel _toolbar = null!;
-        private Label _leftHeader = null!;
+        private Panel _introHost = null!;
         private Panel _leftBottom = null!;
         private Button _introButton = null!;   // pastel "Introduction" button pinned above the left panel
         private Image? _introIcon;             // app icon bitmap shown as a banner in the Intro Help
@@ -48,17 +53,6 @@ namespace B4Browse
         private Button _scaleMinus = null!;
         private Label _scaleLabel = null!;
         private Button _scalePlus = null!;
-
-        // Windows Security deep-link pages (windowsdefender: protocol).
-        private static readonly (string Label, string Uri)[] SecurityShortcuts =
-        {
-            ("Virus && threat protection",      "windowsdefender://threat"),
-            ("Account protection",              "windowsdefender://account"),
-            ("Firewall && network protection",  "windowsdefender://network"),
-            ("App && browser control",          "windowsdefender://appbrowser"),
-            ("Device security",                 "windowsdefender://devicesecurity"),
-            ("Device performance && health",    "windowsdefender://devicehealth"),
-        };
 
         public MainForm()
         {
@@ -99,7 +93,7 @@ namespace B4Browse
             var toolbar = _toolbar;
             _toggleButton = new Button
             {
-                Text = "◀ Links",
+                Text = "◀ Menu",
                 Width = 84,
                 Height = 28,
                 Left = 8,
@@ -107,18 +101,18 @@ namespace B4Browse
                 FlatStyle = FlatStyle.System,
             };
             _toggleButton.Click += (_, _) => ToggleLeftPanel();
-            _tips.SetToolTip(_toggleButton, "Show / hide the side panel of Windows Security and drill-down links");
+            _tips.SetToolTip(_toggleButton, "Show / hide the category navigation panel");
 
-            // Launch Chrome now lives in the left tool panel (added after the Security
-            // shortcuts below); styled to match those buttons.
+            // Launch Chrome lives in the toolbar, just right of the panel toggle. Disabled until
+            // the Safety Scan passes (OnScanCompleted re-enables it).
             _chromeButton = new Button
             {
                 Text = "Launch Chrome",
-                Width = 200,
-                Height = 40,
-                TextAlign = ContentAlignment.MiddleLeft,
+                Width = 130,
+                Height = 28,
+                Top = 7,
+                Left = _toggleButton.Right + 8,
                 FlatStyle = FlatStyle.System,
-                Margin = new Padding(0, 12, 0, 8),
                 Enabled = false,
             };
             _chromeButton.Click += (_, _) => LaunchChrome();
@@ -185,6 +179,7 @@ namespace B4Browse
                 "Date of the most recent Windows update - use it as a baseline: items on the other tabs that changed after this date, and weren't installed by you, are worth a review");
 
             toolbar.Controls.Add(_toggleButton);
+            toolbar.Controls.Add(_chromeButton);
             toolbar.Controls.Add(_sysInfo);
             toolbar.Controls.Add(_patchInfo);
             toolbar.Controls.Add(_emailButton);
@@ -193,60 +188,10 @@ namespace B4Browse
             toolbar.SizeChanged += (_, _) => LayoutToolbarRight();
             LayoutToolbarRight();
 
-            // -- Left panel: Windows Security shortcuts --
-            _leftPanel = new Panel { Dock = DockStyle.Left, Width = 230, BackColor = Theme.Panel };
-            _leftHeader = new Label
-            {
-                Dock = DockStyle.Top,
-                Height = 34,
-                Text = "  Windows Security",
-                TextAlign = ContentAlignment.MiddleLeft,
-                Font = new Font("Segoe UI", 10f, FontStyle.Bold),
-                ForeColor = Theme.Text,
-            };
-            var leftHeader = _leftHeader;
-            var flow = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                AutoScroll = true,
-                Padding = new Padding(10, 6, 10, 6),
-            };
-            foreach (var (label, uri) in SecurityShortcuts)
-            {
-                var b = new Button
-                {
-                    Text = label,
-                    Width = 200,
-                    Height = 40,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    FlatStyle = FlatStyle.System,
-                    Margin = new Padding(0, 0, 0, 8),
-                    Tag = uri,
-                };
-                b.Click += (s, _) => OpenUri((string)((Button)s!).Tag!);
-                flow.Controls.Add(b);
-            }
-            // Launch Chrome sits below the Windows Security shortcuts.
-            flow.Controls.Add(_chromeButton);
+            // -- Left navigation: a category tree + Intro button + theme/about footer --
+            _leftPanel = new Panel { Dock = DockStyle.Left, Width = 240, BackColor = Theme.Panel };
 
-            // "Run as Admin" - only when not already elevated. Relaunches via UAC and exits.
-            if (!Elevation.IsAdmin)
-            {
-                var admin = new Button
-                {
-                    Text = "Run as Admin",
-                    Width = 200, Height = 40,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    FlatStyle = FlatStyle.System,
-                    Margin = new Padding(0, 12, 0, 8),
-                };
-                admin.Click += (_, _) => { if (Elevation.RelaunchAsAdmin()) Application.Exit(); };
-                flow.Controls.Add(admin);
-            }
-
-            // Theme toggle pinned to the lower-left of the panel.
+            // Theme toggle + About pinned to the lower-left of the panel.
             _leftBottom = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = Theme.Panel };
             var themeIcon = new PictureBox
             {
@@ -298,10 +243,9 @@ namespace B4Browse
 
             // Note: theme icon intentionally left unmodified so it always displays the original asset.
 
-            // "Introduction" button pinned to the very top of the left panel - a soft pastel-blue
-            // call-out that opens the welcome / overview Help. Hosted in a small padded panel so it
-            // sits above the "Windows Security" header (docked Top, added last = outermost edge).
-            var introHost = new Panel
+            // "Introduction" button pinned to the very top of the panel - a soft pastel-blue
+            // call-out that opens the welcome / overview Help.
+            _introHost = new Panel
             {
                 Dock = DockStyle.Top,
                 Height = 50,
@@ -320,73 +264,81 @@ namespace B4Browse
             // Derive a crisp banner bitmap from the app icon (nearest 64px frame) for the Intro page.
             try { if (Icon != null) _introIcon = new Icon(Icon, new Size(64, 64)).ToBitmap(); } catch { }
             _introButton.Click += (_, _) => HelpUi.Show(this, TabHelp.Intro with { Header = _introIcon });
-            _tips.SetToolTip(_introButton, "What B4 Browse does and how to use the tabs");
-            introHost.Controls.Add(_introButton);
+            _tips.SetToolTip(_introButton, "What B4 Browse does and how to use the categories");
+            _introHost.Controls.Add(_introButton);
             StyleIntroButton();   // pastel colours, re-applied on theme change by ApplyThemeColors
 
-            _leftPanel.Controls.Add(flow);
-            _leftPanel.Controls.Add(_leftBottom);
-            _leftPanel.Controls.Add(leftHeader);
-            _leftPanel.Controls.Add(introHost);
+            // -- Content host + category tree navigation (replaces the old tab strip) --
+            _content = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
 
-            // -- Tabs (owner-drawn so they can be colour-coded by worst state) --
-            _tabs = new TabControl
+            _navBoldFont = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+            _nav = new TreeView
             {
                 Dock = DockStyle.Fill,
-                Font = new Font("Segoe UI", 11.25f),   // ~25% larger than the 9pt default
-                DrawMode = TabDrawMode.OwnerDrawFixed,
-                SizeMode = TabSizeMode.Normal,
-                Padding = new Point(16, 5),
+                BorderStyle = BorderStyle.None,
+                Font = new Font("Segoe UI", 10.5f),
+                ItemHeight = 30,
+                Indent = 18,
+                FullRowSelect = true,
+                ShowLines = false,
+                ShowPlusMinus = false,
+                ShowRootLines = false,
+                HideSelection = false,
+                DrawMode = TreeViewDrawMode.OwnerDrawText,
+                BackColor = Theme.Panel,
+                ForeColor = Theme.Text,
             };
-            _tabs.DrawItem += DrawTab;
-            _tabs.SelectedIndexChanged += (_, _) => { AutoRunSelectedTab(); UpdateBanner(); _tabs.Invalidate(); };
+            _nav.DrawNode += DrawNavNode;
+            _nav.AfterSelect += (_, e) => { if (e.Node?.Tag is Catalog.Section sec) ShowSection(sec); };
+            _nav.BeforeCollapse += (_, e) => e.Cancel = true;   // keep categories expanded
 
-            _scanView = AddTab("Safety Scan", "scan", "Run Safety Checks",
-                "Click to scan.", ScanSteps(), reportVerdict: true, requiresNetwork: true);
-            _scanView.Completed += OnScanCompleted;
+            foreach (var cat in Catalog.Categories)
+            {
+                var secs = Catalog.InCategory(cat, Elevation.IsAdmin).ToList();
+                if (secs.Count == 0) continue;
+                var catNode = new TreeNode(cat);   // a null Tag marks a category row
+                foreach (var s in secs) catNode.Nodes.Add(new TreeNode(s.Title) { Tag = s });
+                _nav.Nodes.Add(catNode);
+            }
+            _nav.ExpandAll();
 
-            AddViewTab("Patches", "patches", TabViews.BuildPatches());
-            AddViewTab("DNS", "dns", TabViews.BuildDns());
-            AddViewTab("ARP", "arp", TabViews.BuildArp());
-            AddViewTab("Chrome", "chrome", TabViews.BuildChrome());
-            AddViewTab("Settings", "settings", TabViews.BuildSettings());
-            AddViewTab("Services", "services", TabViews.BuildServices());
-            AddViewTab("Processes", "processes", TabViews.BuildProcesses());
-            AddViewTab("Startup", "startup", TabViews.BuildStartup());
-            AddViewTab("Scheduled", "scheduled", TabViews.BuildScheduled());
-            AddViewTab("Installed", "installed", TabViews.BuildInstalled());
-            AddViewTab("Devices", "devices", TabViews.BuildDevices());
-            AddViewTab("Win Extn", "winext", TabViews.BuildWinExt());
-            AddViewTab("Events", "events", TabViews.BuildEvents());
-            AddViewTab("Awake", "awake", TabViews.BuildAwake());
-            AddViewTab("Activity", "activity", TabViews.BuildActivity());
-            AddViewTab("Downloads", "downloads", TabViews.BuildDownloads());
-            AddViewTab("Root CAs", "rootca", TabViews.BuildRootCerts());
-            AddViewTab("Firewall", "firewall", TabViews.BuildFirewall());
-            AddViewTab("Virus", "virus", TabViews.BuildVirus());
-            if (Elevation.IsAdmin)
-                AddViewTab("Restores", "restores", TabViews.BuildRestores());
-            AddViewTab("Users", "users", TabViews.BuildUsers());
+            // "Run as Admin" call-out at the top of the panel when not elevated.
+            Panel? adminHost = null;
+            if (!Elevation.IsAdmin)
+            {
+                adminHost = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Theme.Panel, Padding = new Padding(10, 4, 10, 6) };
+                var adminBtn = new Button { Text = "Run as Admin", Dock = DockStyle.Fill, FlatStyle = FlatStyle.System };
+                adminBtn.Click += (_, _) => RelaunchAsAdmin();
+                _tips.SetToolTip(adminBtn, "Relaunch elevated to read the Security log, SRUM, Defender history and restore points");
+                adminHost.Controls.Add(adminBtn);
+            }
 
-            AddViewTab("Tools", "links", TabViews.BuildLinks());
+            // Assemble the left panel: Fill (nav) first, then Bottom, then Tops (outermost added last).
+            _leftPanel.Controls.Add(_nav);
+            _leftPanel.Controls.Add(_leftBottom);
+            if (adminHost != null) _leftPanel.Controls.Add(adminHost);
+            _leftPanel.Controls.Add(_introHost);
 
             BuildStatusBar();
 
-            // Add Fill first, then docked edges (outermost added last). The status bar is
-            // added after the left panel so it spans the full width along the bottom.
-            Controls.Add(_tabs);
+            // Z-order: Fill content first, then docked edges (outermost added last).
+            Controls.Add(_content);
             Controls.Add(_leftPanel);
             Controls.Add(_statusBar);
             Controls.Add(toolbar);
             Controls.Add(_banner);
             Controls.Add(_emailBusy);   // floating spinner shown while an email report builds
 
-            UpdateBanner(); // initial title for the active (Safety Scan) tab
+            // Build + select the Safety Scan section by default (sets _scanView, wires Completed).
+            ShowSection(Catalog.Find("scan")!);
+            SelectNodeFor(_current!);
+
+            UpdateBanner(); // initial banner for the active (Safety Scan) section
             UpdateAdminStatus();
             UpdateNetStatus();
             UpdateScaleLabel();
             ApplyThemeColors(); // paint buttons/chrome for the startup theme
-            Theme.Changed += () => { ApplyThemeColors(); UpdateBanner(); _tabs.Invalidate(); };
+            Theme.Changed += () => { ApplyThemeColors(); UpdateBanner(); _nav.Invalidate(); };
             Theme.ScaleChanged += UpdateScaleLabel;
 
             // Live-update the network indicator when adapters come up / go down.
@@ -612,7 +564,13 @@ namespace B4Browse
 
             _leftPanel.BackColor = Theme.Panel;
             _leftBottom.BackColor = Theme.Panel;
-            _leftHeader.ForeColor = Theme.Text;
+            _introHost.BackColor = Theme.Panel;
+            if (_nav != null)
+            {
+                _nav.BackColor = Theme.Panel;
+                _nav.ForeColor = Theme.Text;
+                _nav.Invalidate();
+            }
             foreach (Control c in _leftBottom.Controls)
                 if (c is Label) c.ForeColor = Theme.Subtle;
 
@@ -642,64 +600,92 @@ namespace B4Browse
             if (_introButton.Parent != null) _introButton.Parent.BackColor = Theme.Panel;
         }
 
-        /// <summary>The full safety scan, as labelled steps rendered incrementally.</summary>
-        private static (string, Func<CheckGroup>)[] ScanSteps() => new (string, Func<CheckGroup>)[]
-        {
-            ("current DNS servers", SafetyChecks.CheckDnsServers),
-            ("connected router",    SafetyChecks.CheckRouter),
-            ("upstream resolver",   SafetyChecks.CheckUpstreamResolver),
-            ("DNS lookups",         SafetyChecks.CheckDnsLookups),
-            ("cross-resolver DNS",  SafetyChecks.CheckCrossResolver),
-            ("hosts file",          SafetyChecks.CheckHostsFile),
-            ("e-mail (MX) DNS",     SafetyChecks.CheckEmailDns),
-            ("proxy configuration", SafetyChecks.CheckProxy),
-            ("atomic time sync",    SafetyChecks.CheckTimeSync),
-            ("Windows security",    SafetyChecks.CheckWindowsSecurity),
-            ("network sniffers",    SafetyChecks.CheckPromiscuousMode),
-            ("network adapters",    SafetyChecks.CheckNetworkAdapters),
-        };
+        // ---- Tree navigation: lazy build, run, severity colouring ---------------- //
 
-        private static (string, Func<CheckGroup>)[] One(string label, Func<CheckGroup> run)
-            => new[] { (label, run) };
-
-        private ResultsView AddTab(string title, string scope, string runLabel, string intro,
-            (string, Func<CheckGroup>)[] steps, bool reportVerdict, bool requiresNetwork = false)
+        /// <summary>Shows a section's view in the content host, building and caching it on first
+        /// use, and lazily running its checks once the window is visible.</summary>
+        private void ShowSection(Catalog.Section sec)
         {
-            var view = new ResultsView(runLabel, intro, steps, reportVerdict, TabHelp.Scan, requiresNetwork);
-            AddViewTab(title, scope, view);
-            return view;
-        }
-
-        private void AddViewTab(string title, string scope, Control view)
-        {
-            var page = new TabPage(title) { UseVisualStyleBackColor = true, Tag = scope };
-            page.Controls.Add(view);
-            _tabs.TabPages.Add(page);
-            if (view is ITabView tv)
-                tv.SeverityChanged += () =>
+            if (sec.BuildView == null) return;
+            if (!_views.TryGetValue(sec, out var view))
+            {
+                view = sec.BuildView();
+                view.Dock = DockStyle.Fill;
+                _content.Controls.Add(view);
+                if (view is ResultsView rv && sec.Key == "scan")
                 {
-                    if (_tabs.IsHandleCreated)
-                        _tabs.BeginInvoke(new Action(() => { _tabs.Invalidate(); UpdateBanner(); }));
-                };
+                    _scanView = rv;
+                    rv.Completed += OnScanCompleted;
+                }
+                if (view is ITabView tv) tv.SeverityChanged += OnSectionSeverity;
+                _views[sec] = view;
+            }
+
+            foreach (Control c in _content.Controls) c.Visible = ReferenceEquals(c, view);
+            view.BringToFront();
+            _current = sec;
+
+            if (IsHandleCreated && view is ITabView t && !t.HasRun) _ = t.RunAsync();
+            UpdateBanner();
+            _nav.Invalidate();
         }
 
-        /// <summary>Owner-draws a tab header tinted by the worst state detected on that tab.</summary>
-        private void DrawTab(object? sender, DrawItemEventArgs e)
+        /// <summary>Selects the tree node bound to a section (drives the highlight).</summary>
+        private void SelectNodeFor(Catalog.Section sec)
         {
-            var page = _tabs.TabPages[e.Index];
-            bool selected = e.Index == _tabs.SelectedIndex;
-            TabSeverity sev = page.Controls.Count > 0 && page.Controls[0] is ITabView v
-                ? v.Severity : TabSeverity.None;
+            foreach (TreeNode cat in _nav.Nodes)
+                foreach (TreeNode n in cat.Nodes)
+                    if (ReferenceEquals(n.Tag, sec)) { _nav.SelectedNode = n; return; }
+        }
 
-            Color back = SeverityColor(sev, selected);
-            // Severity colours are light, so use dark text on them; neutral tabs follow the theme.
+        /// <summary>Current severity of a section (None until its view is built and has run).</summary>
+        private TabSeverity SevOf(Catalog.Section sec) =>
+            _views.TryGetValue(sec, out var v) && v is ITabView tv ? tv.Severity : TabSeverity.None;
+
+        /// <summary>A section's severity changed (after a run) - repaint the tree + banner.</summary>
+        private void OnSectionSeverity()
+        {
+            if (_nav.IsHandleCreated)
+                _nav.BeginInvoke(new Action(() => { _nav.Invalidate(); UpdateBanner(); }));
+        }
+
+        /// <summary>Owner-draws a nav row tinted by severity. Section rows use their own severity;
+        /// a category row rolls up the worst severity of its sections.</summary>
+        private void DrawNavNode(object? sender, DrawTreeNodeEventArgs e)
+        {
+            var node = e.Node;
+            if (node == null || e.Bounds.Height <= 0) return;
+
+            bool selected = (e.State & TreeNodeStates.Selected) != 0;
+
+            TabSeverity sev;
+            bool isCategory;
+            if (node.Tag is Catalog.Section section)
+            {
+                isCategory = false;
+                sev = SevOf(section);
+            }
+            else
+            {
+                isCategory = true;
+                sev = TabSeverity.None;
+                foreach (TreeNode child in node.Nodes)
+                    if (child.Tag is Catalog.Section cs) sev = Sev.Max(sev, SevOf(cs));
+            }
+
+            var row = new Rectangle(0, e.Bounds.Top, _nav.ClientSize.Width, e.Bounds.Height);
+            Color back = sev == TabSeverity.None
+                ? (selected ? Theme.NeutralTab(true) : Theme.Panel)
+                : SeverityColor(sev, selected);
             Color fore = sev == TabSeverity.None ? Theme.Text : Color.FromArgb(30, 30, 30);
-            var r = e.Bounds;
-            using (var b = new SolidBrush(back)) e.Graphics.FillRectangle(b, r);
-            using (var pen = new Pen(Theme.GridLine)) e.Graphics.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
 
-            TextRenderer.DrawText(e.Graphics, page.Text, _tabs.Font, r, fore,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
+            using (var b = new SolidBrush(back)) e.Graphics.FillRectangle(b, row);
+
+            var font = isCategory ? _navBoldFont : _nav.Font;
+            int textLeft = isCategory ? 8 : e.Bounds.X;
+            var textRect = new Rectangle(textLeft, e.Bounds.Top, row.Width - textLeft - 4, e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, node.Text, font, textRect, fore,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         }
 
         protected override void OnShown(EventArgs e)
@@ -731,39 +717,6 @@ namespace B4Browse
             });
         }
 
-        /// <summary>Lazily run a tab's checks the first time it is opened.</summary>
-        private void AutoRunSelectedTab()
-        {
-            if (_tabs.SelectedTab?.Controls.Count > 0 &&
-                _tabs.SelectedTab.Controls[0] is ITabView v && !v.HasRun)
-                _ = v.RunAsync();
-        }
-
-        // Descriptive banner title per tab (keyed by scope tag).
-        private static readonly Dictionary<string, string> BannerTitles = new()
-        {
-            ["scan"] = "Local network configuration",
-            ["dns"] = "DNS resolver cache",
-            ["arp"] = "Local ARP neighbor cache",
-            ["patches"] = "Installed Windows patches",
-            ["chrome"] = "Chrome browser and extensions",
-            ["services"] = "3rd party background services",
-            ["processes"] = "Running processes",
-            ["startup"] = "Startup on login",
-            ["scheduled"] = "Scheduled tasks",
-            ["installed"] = "Installed program changes",
-            ["devices"] = "Installed device changes",
-            ["winext"] = "File Explorer shell extensions",
-            ["events"] = "Recent system & security events",
-            ["awake"] = "Recent awake / sleep periods",
-            ["activity"] = "App launch activity",
-            ["downloads"] = "Per-app network usage (downloads)",
-            ["rootca"] = "Trusted root certificate authorities",
-            ["firewall"] = "Windows Firewall configuration",
-            ["restores"] = "System Restore points",
-            ["users"] = "Local user accounts",
-        };
-
         /// <summary>Tab/banner background colour for a severity (selected = stronger shade).</summary>
         private static Color SeverityColor(TabSeverity sev, bool selected) => sev switch
         {
@@ -773,15 +726,13 @@ namespace B4Browse
             _ => Theme.NeutralTab(selected),
         };
 
-        /// <summary>Banner shows the active tab's title; its colour matches that tab once it has run.</summary>
+        /// <summary>Banner shows the active section's title; its colour matches that section once it has run.</summary>
         private void UpdateBanner()
         {
-            var page = _tabs.SelectedTab;
-            if (page == null) return;
-            string scope = page.Tag as string ?? "";
-            TabSeverity sev = page.Controls.Count > 0 && page.Controls[0] is ITabView v ? v.Severity : TabSeverity.None;
+            if (_current == null) return;
+            TabSeverity sev = SevOf(_current);
 
-            _banner.Text = BannerTitles.TryGetValue(scope, out var title) ? title : page.Text;
+            _banner.Text = _current.BannerOrTitle;
             if (sev == TabSeverity.None)
             {
                 _banner.BackColor = Theme.IsDark ? Color.FromArgb(60, 60, 64) : Color.FromArgb(210, 214, 219);
@@ -803,7 +754,7 @@ namespace B4Browse
         private void ToggleLeftPanel()
         {
             _leftPanel.Visible = !_leftPanel.Visible;
-            _toggleButton.Text = _leftPanel.Visible ? "◀ Links" : "▶ Links";
+            _toggleButton.Text = _leftPanel.Visible ? "◀ Menu" : "▶ Menu";
         }
 
         private void ToggleTheme()
@@ -819,8 +770,8 @@ namespace B4Browse
         /// </summary>
         private async void EmailCurrentTab()
         {
-            string scope = _tabs.SelectedTab?.Tag as string ?? "scan";
-            string tabName = _tabs.SelectedTab?.Text ?? scope;
+            string scope = _current?.Key ?? "scan";
+            string tabName = _current?.Title ?? scope;
 
             _emailButton.Enabled = false;
             CenterEmailBusy();
@@ -839,7 +790,7 @@ namespace B4Browse
         /// <summary>Builds the active tab's report on a background thread and copies it to the clipboard.</summary>
         private async void CopyCurrentTab()
         {
-            string scope = _tabs.SelectedTab?.Tag as string ?? "scan";
+            string scope = _current?.Key ?? "scan";
 
             _copyButton.Enabled = false;
             CenterEmailBusy();
@@ -868,8 +819,8 @@ namespace B4Browse
         /// </summary>
         private async void PrintCurrentTab()
         {
-            string scope = _tabs.SelectedTab?.Tag as string ?? "scan";
-            string tabName = _tabs.SelectedTab?.Text ?? scope;
+            string scope = _current?.Key ?? "scan";
+            string tabName = _current?.Title ?? scope;
 
             _printButton.Enabled = false;
             CenterEmailBusy();
@@ -985,19 +936,6 @@ namespace B4Browse
                 _sysInfo.Left = gap > _sysInfo.Width
                     ? availLeft + (gap - _sysInfo.Width) / 2
                     : availLeft;
-            }
-        }
-
-        private void OpenUri(string uri)
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                CopyableMessageBox.Show(this, $"Could not open '{uri}': {ex.Message}",
-                    "B4 Browse", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 

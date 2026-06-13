@@ -13,45 +13,17 @@ namespace B4Browse
     /// </summary>
     public static class Reports
     {
-        /// <summary>Per-tab producers, in display order. "all" runs every scope.</summary>
-        private static readonly (string Key, string Title, Func<CheckGroup>[] Producers)[] Catalog =
-        {
-            ("scan", "Safety Scan", new Func<CheckGroup>[]
-            {
-                SafetyChecks.CheckDnsServers, SafetyChecks.CheckRouter, SafetyChecks.CheckUpstreamResolver,
-                SafetyChecks.CheckDnsLookups, SafetyChecks.CheckCrossResolver, SafetyChecks.CheckHostsFile,
-                SafetyChecks.CheckEmailDns, SafetyChecks.CheckProxy, SafetyChecks.CheckTimeSync,
-                SafetyChecks.CheckWindowsSecurity, SafetyChecks.CheckPromiscuousMode,
-                SafetyChecks.CheckNetworkAdapters,
-            }),
-            ("dns",       "DNS Cache", new Func<CheckGroup>[] { SafetyChecks.CheckDnsCache }),
-            ("arp",       "ARP Cache", new Func<CheckGroup>[] { SafetyChecks.CheckArp }),
-            ("patches",   "Patches", new Func<CheckGroup>[] { SafetyChecks.CheckPatches }),
-            ("chrome",    "Chrome", new Func<CheckGroup>[] { SafetyChecks.CheckChromeExe, SafetyChecks.CheckChromePrivacy, SafetyChecks.CheckChromeExtensions }),
-            ("settings",  "Chrome Settings", new Func<CheckGroup>[] { SafetyChecks.CheckChromeSettings }),
-            ("services",  "Services", new Func<CheckGroup>[] { SafetyChecks.CheckServices }),
-            ("processes", "Processes", new Func<CheckGroup>[] { SafetyChecks.CheckProcesses }),
-            ("startup",   "Startup", new Func<CheckGroup>[] { SafetyChecks.CheckStartup }),
-            ("scheduled", "Scheduled Tasks", new Func<CheckGroup>[] { SafetyChecks.CheckScheduledTasks }),
-            ("installed", "Installed", new Func<CheckGroup>[] { SafetyChecks.CheckInstalled }),
-            ("devices",   "Devices", new Func<CheckGroup>[] { SafetyChecks.CheckDevices }),
-            ("winext",    "Shell Extensions", new Func<CheckGroup>[] { SafetyChecks.CheckWinExt }),
-            ("events",    "Event Log", new Func<CheckGroup>[] { SafetyChecks.CheckEventLog }),
-            ("awake",     "Awake Periods", new Func<CheckGroup>[] { SafetyChecks.CheckAwake }),
-            ("activity",  "App Activity", new Func<CheckGroup>[] { SafetyChecks.CheckActivity }),
-            ("downloads", "Downloads", new Func<CheckGroup>[] { SafetyChecks.DownloadsHeader, SafetyChecks.CheckDownloads }),
-            ("rootca",    "Root CAs", new Func<CheckGroup>[] { SafetyChecks.CheckRootCAs }),
-            ("firewall",  "Firewall", new Func<CheckGroup>[] { SafetyChecks.CheckFirewall, SafetyChecks.CheckFirewallRules }),
-            ("virus",     "Virus", new Func<CheckGroup>[] { SafetyChecks.VirusHeader, SafetyChecks.CheckVirus }),
-            ("restores",  "Restore Points", new Func<CheckGroup>[] { SafetyChecks.CheckRestore }),
-            ("users",     "User Accounts", new Func<CheckGroup>[] { SafetyChecks.CheckUsers }),
-        };
+        /// <summary>Reportable sections (those with headless producers), in display order, drawn
+        /// from the single declarative <see cref="Catalog"/>. GUI-only sections (Links, Windows
+        /// Security) have no producers and are excluded.</summary>
+        private static IEnumerable<Catalog.Section> ReportSections =>
+            Catalog.Sections.Where(s => s.HasReport);
 
-        public static IEnumerable<string> Scopes => Catalog.Select(c => c.Key).Append("all");
+        public static IEnumerable<string> Scopes => ReportSections.Select(s => s.Key).Append("all");
 
         public static bool IsValidScope(string scope) =>
             scope.Equals("all", StringComparison.OrdinalIgnoreCase) ||
-            Catalog.Any(c => c.Key.Equals(scope, StringComparison.OrdinalIgnoreCase));
+            ReportSections.Any(s => s.Key.Equals(scope, StringComparison.OrdinalIgnoreCase));
 
         /// <summary>
         /// Runs the producers for a scope and formats a plain-text report. When
@@ -65,8 +37,8 @@ namespace B4Browse
             string scope, Action<int, int, string, bool>? progress = null)
         {
             var sections = scope.Equals("all", StringComparison.OrdinalIgnoreCase)
-                ? Catalog
-                : Catalog.Where(c => c.Key.Equals(scope, StringComparison.OrdinalIgnoreCase)).ToArray();
+                ? ReportSections.ToArray()
+                : ReportSections.Where(c => c.Key.Equals(scope, StringComparison.OrdinalIgnoreCase)).ToArray();
 
             var sb = new StringBuilder();
             sb.AppendLine($"B4 Browse report  -  scope: {scope}  -  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
@@ -75,15 +47,16 @@ namespace B4Browse
             int total = sections.Length;
             int index = 0;
             CheckStatus overall = CheckStatus.Pass;
-            foreach (var (key, title, producers) in sections)
+            foreach (var section in sections)
             {
+                string title = section.ReportTitleOrTitle;
                 index++;
-                string label = key.ToUpperInvariant();
+                string label = section.Key.ToUpperInvariant();
                 progress?.Invoke(index, total, label, false);   // started
 
                 sb.AppendLine();
                 sb.AppendLine($"### {title} ###");
-                foreach (var produce in producers)
+                foreach (var produce in section.Producers)
                 {
                     CheckGroup g;
                     try { g = produce(); }

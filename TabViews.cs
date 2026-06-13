@@ -464,6 +464,68 @@ namespace B4Browse
             return host;
         }
 
+        // ---- Windows Security: deep-link shortcuts ----------------------- //
+        // The windowsdefender: protocol pages, previously buttons in the left panel; now a
+        // section view under the Tools category. Each button opens its Windows Security page.
+        private static readonly (string Label, string Uri)[] SecurityShortcuts =
+        {
+            ("Virus & threat protection",      "windowsdefender://threat"),
+            ("Account protection",             "windowsdefender://account"),
+            ("Firewall & network protection",  "windowsdefender://network"),
+            ("App & browser control",          "windowsdefender://appbrowser"),
+            ("Device security",                "windowsdefender://devicesecurity"),
+            ("Device performance & health",    "windowsdefender://devicehealth"),
+            ("Windows Security (home)",         "windowsdefender://"),
+        };
+
+        public static Control BuildSecurityLinks()
+        {
+            var host = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
+
+            var bar = new Panel { Dock = DockStyle.Top, Height = 40, BackColor = Theme.Toolbar };
+            var title = new Label
+            {
+                Text = "  Windows Security shortcuts", AutoSize = true, Top = 10, Left = 8,
+                Font = new Font("Segoe UI", 10f, FontStyle.Bold), ForeColor = Theme.Text,
+            };
+            bar.Controls.Add(title);
+            Theme.Changed += () => { if (bar.IsHandleCreated) bar.BeginInvoke(new Action(() => { bar.BackColor = Theme.Toolbar; title.ForeColor = Theme.Text; })); };
+
+            var flow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                AutoScroll = true,
+                Padding = new Padding(14, 12, 14, 12),
+                BackColor = Theme.Surface,
+            };
+            foreach (var (label, uri) in SecurityShortcuts)
+            {
+                var b = new Button
+                {
+                    Text = label,
+                    Width = 280,
+                    Height = 40,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    FlatStyle = FlatStyle.System,
+                    Margin = new Padding(0, 0, 0, 8),
+                    Tag = uri,
+                };
+                b.Click += (s, _) =>
+                {
+                    try { Process.Start(new ProcessStartInfo((string)((Button)s!).Tag!) { UseShellExecute = true }); }
+                    catch { }
+                };
+                flow.Controls.Add(b);
+            }
+            Theme.Changed += () => { if (flow.IsHandleCreated) flow.BeginInvoke(new Action(() => flow.BackColor = Theme.Surface)); };
+
+            host.Controls.Add(flow);   // Fill first ...
+            host.Controls.Add(bar);    // ... then Top bar
+            return host;
+        }
+
         // ---- Processes (same structure/behavior as Installed) ------------ //
         public static Control BuildProcesses()
         {

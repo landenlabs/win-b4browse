@@ -36,7 +36,7 @@ single file is portable.
 
 ## Architecture
 
-The whole app is built on one small data model and a central catalog:
+The whole app is built on one small data model and a single declarative catalog:
 
 - **`CheckResult.cs`** — the model. `CheckStatus` enum (`Pass/Warn/Fail/Info`),
   `CheckResult` (one line: status + name + detail, or a pre-formatted `Table` row), and
@@ -44,20 +44,30 @@ The whole app is built on one small data model and a central catalog:
 - **`SafetyChecks`** — all diagnostic logic, a `static partial class` split across 15
   files (see below). Every public `CheckXxx()` method returns a populated `CheckGroup`
   and is safe to call from a background thread.
-- **`Reports.cs`** — central catalog mapping each scope key → its `Func<CheckGroup>[]`
-  producers, in display order. `Reports.Build(scope)` runs the producers and formats the
+- **`Catalog.cs`** — **the single source of truth for everything the app surfaces.** A flat
+  `Section[]` (grouped by `Category`), each carrying its nav `Title`, scope `Key`, `Banner`,
+  `ReportTitle`, `AdminOnly` flag, headless `Producers` (`Func<CheckGroup>[]`), and GUI
+  `BuildView` factory (`Func<Control>`). **Add a feature by adding one `Section` row here** —
+  it then appears automatically in the tree nav (`MainForm`), the headless `--run` scopes and
+  the `all` report (`Reports`), the severity roll-up, and email/copy/print. Adding a browser is
+  purely additive (register per-browser sections under the `Browser` category). Sections with no
+  `Producers` (Links, Windows Security) are GUI-only.
+- **`Reports.cs`** — runs the `Catalog` sections' producers for a scope and formats the
   plain-text report (isolating each check so one failure becomes a `[FAIL]` line, not an
-  abort). Shared by the headless runner and the email feature. **Add a new check here**
-  to wire it into both headless reports and (via the same catalog) the UI tabs.
+  abort). Shared by the headless runner and the email feature. GUI-only sections are excluded.
 - **`Program.cs`** — entry point. Parses `--run/--report/--inventory/--out/--help`;
   headless paths call `Reports.Build`. GUI path loads `Theme` then runs `MainForm`.
   Re-attaches to the parent console (`AttachConsole`) so a WinExe app can print headless
   output to the terminal.
 
 ### UI layer
-- **`MainForm.cs`** — main window: verdict banner, toolbar (Launch Chrome, Email tab,
-  Copy), collapsible left panel of Windows Security deep-links, and a `TabControl` where
-  each tab is a `ResultsView`.
+- **`MainForm.cs`** — main window: verdict banner, toolbar (Launch Chrome, Email/Copy/Print),
+  and a left **category tree** (`TreeView`, built from `Catalog` and grouped by category) that
+  selects sections into a content host. The tree is owner-drawn and severity-tinted: each
+  section row colours by its worst state and each category row rolls up the worst of its
+  sections. Section views are built lazily, cached, and run on first show. The Intro button is
+  pinned above the tree; theme toggle + About below it; Links and Windows Security are a "Tools"
+  category.
 - **`ResultsView.cs`** — a single tab: runs its set of checks on a background thread and
   renders the resulting `CheckGroup`s.
 - **`TabViews.cs`** — the large file (per-tab grid construction + right-click context

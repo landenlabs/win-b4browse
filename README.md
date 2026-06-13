@@ -22,7 +22,7 @@
 1. **Is my network configuration safe?** — Confirm there is no rogue proxy in the path and that DNS resolution is not being spoofed or silently redirected.
 2. **Has anything changed that shouldn't have?** — Surface files, extensions, programs, processes, services, and drivers that were **modified recently but don't line up with a Windows patch / update date**. A binary that changed last Tuesday when Windows Update didn't run that week is exactly the kind of thing worth a second look.
 
-It runs a Safety Scan on startup and presents the results across a set of sortable, color-coded tabs. Recently-changed items are highlighted so you can quickly separate "this is just last month's patch" from "why did *that* change yesterday?"
+It runs a Safety Scan on startup and presents its findings in a left-hand navigator grouped into categories — **Network path**, **Recent changes**, **Accounts & usage**, **Protection**, **Browser**, and **Tools**. Each section is sortable and color-coded by its worst finding, and that color rolls up to its category, so anything that needs attention stands out at a glance. Recently-changed items are highlighted so you can quickly separate "this is just last month's patch" from "why did *that* change yesterday?"
 
 
 ---
@@ -123,7 +123,7 @@ Run with no arguments to launch the GUI. The headless modes run the same checks 
 | `B4Browse.exe --out <file>` | Also write the report text to `<file>` (headless modes only). |
 | `B4Browse.exe --help` | Show usage and exit. Also `-h`, `-?`, `/?`. |
 
-**Scopes:** `scan`, `dns`, `patches`, `chrome`, `services`, `processes`, `startup`, `installed`, `devices`, `events`, `firewall`, `all`.
+**Scopes:** `scan`, `dns`, `arp`, `rootca`, `firewall`, `patches`, `processes`, `services`, `startup`, `scheduled`, `installed`, `devices`, `winext`, `users`, `activity`, `awake`, `downloads`, `events`, `virus`, `restores`, `chrome`, `settings`, `all`.
 
 ```bat
 B4Browse.exe --run scan

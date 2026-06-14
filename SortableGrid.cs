@@ -42,6 +42,8 @@ namespace B4Browse
         private readonly DataGridView _grid;
         private readonly Button _refresh;
         private readonly Label _status;
+        private Font? _statusFont;       // base summary font
+        private Font? _statusBoldFont;   // bold summary font for an elevation notice
         private readonly Func<List<object>> _loader;
         private readonly Func<string>? _summary;
         private readonly GridColumn[] _cols;
@@ -189,6 +191,8 @@ namespace B4Browse
                 Text = "Click " + runLabel + ".",
             };
             top.Controls.Add(_status);
+            _statusFont = _status.Font;
+            _statusBoldFont = new Font(_status.Font, FontStyle.Bold);
 
             if (help != null)
             {
@@ -356,6 +360,7 @@ namespace B4Browse
             foreach (Control c in (_topPanel?.Controls ?? (ControlCollection)Controls))
                 if (c is Label || c is CheckBox) c.ForeColor = Theme.Subtle;
             if (_toggle != null) _toggle.ForeColor = Theme.Text;
+            ApplyStatusStyle();   // restore the orchid tint if the summary is an elevation notice
 
             _grid.BackgroundColor = Theme.Surface;
             _grid.GridColor = Theme.GridLine;
@@ -399,7 +404,7 @@ namespace B4Browse
             _busy.Top = Math.Max(40, (ClientSize.Height - _busy.Height) / 2);
         }
 
-        public void SetStatus(string text) => _status.Text = text;
+        public void SetStatus(string text) => SetStatusText(text);
 
         /// <summary>Enables or disables an extra toolbar button by its label (no-op if unknown).</summary>
         public void SetExtraButtonEnabled(string label, bool enabled)
@@ -432,7 +437,7 @@ namespace B4Browse
             if (_loading) return;
             _loading = true;
             _refresh.Enabled = false;
-            _status.Text = "Loading …";
+            SetStatusText("Loading …");
 
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
@@ -473,7 +478,7 @@ namespace B4Browse
                     Populate();
 
                     string count = $"{_items.Count} item(s)   -   {DateTime.Now:HH:mm:ss}";
-                    _status.Text = summaryText != null ? $"{summaryText}      |      {count}" : count;
+                    SetStatusText(summaryText != null ? $"{summaryText}      |      {count}" : count);
                 }
             }
             finally
@@ -489,7 +494,7 @@ namespace B4Browse
             // A cancelled run leaves any previously loaded rows and severity untouched.
             if (cancelled)
             {
-                _status.Text = HasRun ? "Cancelled - previous results shown." : "Cancelled.";
+                SetStatusText(HasRun ? "Cancelled - previous results shown." : "Cancelled.");
                 return;
             }
 
@@ -499,13 +504,30 @@ namespace B4Browse
 
         private void OnCancelRequested()
         {
-            _status.Text = "Cancelling …";
+            SetStatusText("Cancelling …");
             _cts?.Cancel();
         }
 
         private string SafeSummary()
         {
             try { return _summary!(); } catch { return ""; }
+        }
+
+        /// <summary>Sets the status/summary text and tints it: an "elevation required" summary
+        /// (e.g. Downloads' "Requires administrator …", Virus' "run as Admin …") is shown in the
+        /// orchid accent + bold to tie it to the Run-as-Admin button; anything else stays neutral.</summary>
+        private void SetStatusText(string text)
+        {
+            _status.Text = text;
+            ApplyStatusStyle();
+        }
+
+        private void ApplyStatusStyle()
+        {
+            bool elevate = _status.Text.StartsWith("Requires administrator", StringComparison.OrdinalIgnoreCase)
+                        || _status.Text.Contains("run as Admin", StringComparison.OrdinalIgnoreCase);
+            _status.ForeColor = elevate ? Theme.AdminAccent : Theme.Subtle;
+            _status.Font = elevate ? (_statusBoldFont ?? _status.Font) : (_statusFont ?? _status.Font);
         }
 
         private void RenderHeader(CheckGroup g)

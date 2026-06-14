@@ -63,7 +63,7 @@ namespace B4Browse
             var empty = new List<SruNetUsage>();
             if (!Elevation.IsAdmin)
             {
-                SruStatus = "Requires administrator - SRUDB.dat lives under C:\\Windows\\System32\\sru.";
+                SruStatus = "Requires administrator";
                 return empty;
             }
             if (!File.Exists(SruDbPath))

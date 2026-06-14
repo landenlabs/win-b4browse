@@ -66,6 +66,10 @@ namespace B4Browse
         public static Color GridLine => IsDark ? Color.FromArgb(64, 64, 68)  : Color.FromArgb(230, 230, 230);
         public static Color Card    => IsDark ? Color.FromArgb(52, 52, 56)   : Color.FromArgb(248, 248, 250);
         public static Color Link    => IsDark ? Color.FromArgb(96, 162, 250) : Color.FromArgb(0, 102, 204);
+        // "Needs elevation" accent (orchid/magenta) - deliberately not blue/amber/red/green, which are
+        // taken by link/warn/fail/pass. Two shades so it stays readable on white and on dark panels.
+        public static Color AdminAccent     => IsDark ? Color.FromArgb(224, 138, 216) : Color.FromArgb(176, 37, 140); // #E08AD8 / #B0258C
+        public static Color AdminAccentSoft => IsDark ? Color.FromArgb(70, 50, 70)    : Color.FromArgb(245, 224, 240); // faint bg tint for the button state/flash
         public static Color ButtonBack   => IsDark ? Color.FromArgb(62, 62, 66)   : Color.FromArgb(240, 240, 240);
         public static Color ButtonBorder => IsDark ? Color.FromArgb(92, 92, 98)   : Color.FromArgb(176, 176, 180);
 

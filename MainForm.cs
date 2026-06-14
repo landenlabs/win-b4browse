@@ -49,6 +49,15 @@ namespace B4Browse
         private Label _adminIcon = null!;     // Segoe MDL2 shield glyph
         private Label _adminStatus = null!;   // "Administrator" / "Standard user"
         private Label _netStatus = null!;
+
+        // "Needs elevation" affordances: a left-panel call-out (caption + Run-as-Admin button)
+        // shown when unelevated, plus the bottom indicator above. When the active section needs
+        // admin (and we aren't elevated) these turn orchid; the visible one flashes once.
+        private Button? _adminBtn;            // left-panel "Run as Admin" (null when already elevated)
+        private bool _currentNeedsAdmin;      // active section needs admin & we aren't elevated
+        private bool _adminFlashShown;        // gentle flash fires only once per session
+        private System.Windows.Forms.Timer? _adminFlashTimer;
+        private int _adminFlashTick;          // ticks elapsed in the current flash run
         private Label _errorBadge = null!;    // "⚠ N errors" - click opens ErrorLogDialog; hidden at 0
         private Label _scaleCaption = null!;
         private Button _scaleMinus = null!;
@@ -304,15 +313,17 @@ namespace B4Browse
             }
             _nav.ExpandAll();
 
-            // "Run as Admin" call-out at the top of the panel when not elevated.
+            // "Run as Admin" call-out at the top of the panel when not elevated. Neutral by
+            // default; turns orchid (with a one-time flash) only while the active section needs admin.
             Panel? adminHost = null;
             if (!Elevation.IsAdmin)
             {
                 adminHost = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Theme.Panel, Padding = new Padding(10, 4, 10, 6) };
-                var adminBtn = new Button { Text = "Run as Admin", Dock = DockStyle.Fill, FlatStyle = FlatStyle.System };
-                adminBtn.Click += (_, _) => RelaunchAsAdmin();
-                _tips.SetToolTip(adminBtn, "Relaunch elevated to read the Security log, SRUM, Defender history and restore points");
-                adminHost.Controls.Add(adminBtn);
+                _adminBtn = new Button { Text = "Run as Admin", Dock = DockStyle.Fill };
+                Theme.StyleButton(_adminBtn);   // flat, so its colour is controllable for the needs-admin state
+                _adminBtn.Click += (_, _) => RelaunchAsAdmin();
+                _tips.SetToolTip(_adminBtn, "Relaunch elevated to read the Security log, SRUM, Defender history and restore points");
+                adminHost.Controls.Add(_adminBtn);
             }
 
             // Assemble the left panel: Fill (nav) first, then Bottom, then Tops (outermost added last).
@@ -498,7 +509,7 @@ namespace B4Browse
 
             Color c = admin
                 ? (Theme.IsDark ? Color.FromArgb(120, 190, 255) : Color.FromArgb(0, 90, 200))  // UAC blue
-                : Theme.Subtle;
+                : (_currentNeedsAdmin ? Theme.AdminAccent : Theme.Subtle);  // orchid when the active panel needs admin
             _adminIcon.ForeColor = c;
             _adminStatus.ForeColor = c;
 
@@ -513,6 +524,80 @@ namespace B4Browse
             _tips.SetToolTip(_adminStatus, tip);
 
             LayoutStatusBar();
+        }
+
+        /// <summary>
+        /// Paints the elevation affordances (left-panel caption + Run-as-Admin button, and the
+        /// bottom indicator) for the current "does the active section need admin?" state. Orchid
+        /// when it does, neutral when it doesn't. The single authority for that colouring; called
+        /// from <see cref="ShowSection"/> on navigation and from the theme re-paint.
+        /// </summary>
+        private void ApplyAdminAffordanceState(bool needsAdmin)
+        {
+            _currentNeedsAdmin = needsAdmin;
+            UpdateAdminStatus();   // bottom indicator (orchid-aware via _currentNeedsAdmin)
+
+            if (_adminBtn == null) return;   // already elevated: no call-out
+
+            if (needsAdmin)
+            {
+                _adminBtn.BackColor = Theme.AdminAccentSoft;
+                _adminBtn.ForeColor = Theme.AdminAccent;
+                _adminBtn.FlatAppearance.BorderColor = Theme.AdminAccent;
+            }
+            else
+            {
+                Theme.StyleButton(_adminBtn);   // back to neutral ButtonBack/Text/border
+            }
+        }
+
+        /// <summary>Begins a gentle one-shot pulse of the *visible* elevation affordance (the
+        /// left button when the panel is open, else the bottom indicator) over ~3 seconds,
+        /// settling on the steady orchid state. Fired once per session from <see cref="ShowSection"/>.</summary>
+        private void StartAdminFlash()
+        {
+            _adminFlashTimer ??= new System.Windows.Forms.Timer { Interval = 150 };
+            _adminFlashTimer.Tick -= AdminFlashTick;
+            _adminFlashTimer.Tick += AdminFlashTick;
+            _adminFlashTick = 0;
+            _adminFlashTimer.Start();
+        }
+
+        private void AdminFlashTick(object? sender, EventArgs e)
+        {
+            const int ticks = 20;       // 20 * 150ms ~= 3s
+            const double cycles = 2.0;  // two slow pulses
+            _adminFlashTick++;
+            if (_adminFlashTick > ticks)
+            {
+                _adminFlashTimer!.Stop();
+                ApplyAdminAffordanceState(_currentNeedsAdmin);   // settle on the steady state
+                return;
+            }
+            double t = (double)_adminFlashTick / ticks;
+            double k = (1 - Math.Cos(2 * Math.PI * cycles * t)) / 2;   // gentle 0->1->0 ease, twice
+
+            bool useButton = _leftPanel.Visible && _adminBtn != null;
+            if (useButton)
+            {
+                _adminBtn!.BackColor = Lerp(Theme.ButtonBack, Theme.AdminAccentSoft, k);
+                _adminBtn.ForeColor = Lerp(Theme.Text, Theme.AdminAccent, k);
+                _adminBtn.FlatAppearance.BorderColor = Lerp(Theme.ButtonBorder, Theme.AdminAccent, k);
+            }
+            else
+            {
+                Color c = Lerp(Theme.Subtle, Theme.AdminAccent, k);
+                _adminIcon.ForeColor = c;
+                _adminStatus.ForeColor = c;
+            }
+        }
+
+        /// <summary>Linear blend between two colours (t in 0..1).</summary>
+        private static Color Lerp(Color a, Color b, double t)
+        {
+            t = Math.Clamp(t, 0, 1);
+            int Mix(int x, int y) => (int)Math.Round(x + (y - x) * t);
+            return Color.FromArgb(Mix(a.R, b.R), Mix(a.G, b.G), Mix(a.B, b.B));
         }
 
         /// <summary>Relaunches the app elevated via UAC and exits the current instance. No-op when
@@ -553,6 +638,8 @@ namespace B4Browse
             NetworkChange.NetworkAddressChanged -= OnNetworkChanged;
             Theme.ScaleChanged -= UpdateScaleLabel;
             ErrorLog.Changed -= OnErrorLogChanged;
+            _adminFlashTimer?.Stop();
+            _adminFlashTimer?.Dispose();
             base.OnFormClosed(e);
         }
 
@@ -586,6 +673,7 @@ namespace B4Browse
             // Explicitly paint every button (toolbar, left panel, and inside each tab view).
             Theme.StyleButtons(this);
             StyleIntroButton();   // restore the Intro button's pastel after the generic repaint
+            ApplyAdminAffordanceState(_currentNeedsAdmin);   // restore orchid/neutral after the generic repaint
 
             // Native scrollbars (nav tree, grids, rich-text panes, scrolling tool panels) follow the
             // window theme, not managed colours - retheme them across every built view.
@@ -630,6 +718,12 @@ namespace B4Browse
             foreach (Control c in _content.Controls) c.Visible = ReferenceEquals(c, view);
             view.BringToFront();
             _current = sec;
+
+            // Elevation cue: orchid the Run-as-Admin affordances while this section is degraded
+            // without admin, and flash the visible one once (first needs-admin panel this session).
+            bool needs = !Elevation.IsAdmin && sec.NeedsAdmin;
+            ApplyAdminAffordanceState(needs);
+            if (needs && !_adminFlashShown) { _adminFlashShown = true; StartAdminFlash(); }
 
             if (IsHandleCreated && view is ITabView t && !t.HasRun) _ = t.RunAsync();
             UpdateBanner();
@@ -694,12 +788,14 @@ namespace B4Browse
 
             TabSeverity sev;
             bool isCategory;
+            bool needsElevationDot = false;   // section needs admin & we aren't elevated
             (int Total, int Risk)? counts;
             if (node.Tag is Catalog.Section section)
             {
                 isCategory = false;
                 sev = SevOf(section);
                 counts = CountsOf(section);
+                needsElevationDot = !Elevation.IsAdmin && section.NeedsAdmin;
             }
             else
             {
@@ -735,6 +831,18 @@ namespace B4Browse
                     : Color.FromArgb(70, 70, 70);   // dark-but-muted on a light severity tint
                 TextRenderer.DrawText(e.Graphics, badge, _navBadgeFont, badgeRect, badgeFore,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPadding);
+            }
+
+            // A small orchid dot in the left gutter marks sections that need elevation we don't have.
+            if (needsElevationDot)
+            {
+                const int d = 7;
+                int dx = Math.Max(3, e.Bounds.X - 12);
+                int dy = e.Bounds.Top + (e.Bounds.Height - d) / 2;
+                var prevMode = e.Graphics.SmoothingMode;
+                e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (var db = new SolidBrush(Theme.AdminAccent)) e.Graphics.FillEllipse(db, dx, dy, d, d);
+                e.Graphics.SmoothingMode = prevMode;
             }
 
             var font = isCategory ? _navBoldFont : _nav.Font;

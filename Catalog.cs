@@ -29,6 +29,7 @@ namespace B4Browse
             public string Banner = "";                // banner caption (defaults to Title)
             public string ReportTitle = "";           // headless section header (defaults to Title)
             public bool AdminOnly = false;            // GUI: only shown when elevated
+            public bool NeedsAdmin = false;           // GUI: shown but degraded without elevation => drives the orchid "needs admin" accent
             public Func<CheckGroup>[] Producers = Array.Empty<Func<CheckGroup>>();  // empty => GUI-only
             public Func<Control>? BuildView = null;   // GUI factory; null => headless-only
 
@@ -123,18 +124,18 @@ namespace B4Browse
                     Banner = "Recent awake / sleep periods", ReportTitle = "Awake Periods",
                     Producers = new Func<CheckGroup>[] { SafetyChecks.CheckAwake }, BuildView = TabViews.BuildAwake },
             new() { Category = "Accounts & usage", Title = "Downloads", Key = "downloads",
-                    Banner = "Per-app network usage (downloads)", ReportTitle = "Downloads",
+                    Banner = "Per-app network usage (downloads)", ReportTitle = "Downloads", NeedsAdmin = true,
                     Producers = new Func<CheckGroup>[] { SafetyChecks.DownloadsHeader, SafetyChecks.CheckDownloads }, BuildView = TabViews.BuildDownloads },
             new() { Category = "Accounts & usage", Title = "Events", Key = "events",
-                    Banner = "Recent system & security events", ReportTitle = "Event Log",
+                    Banner = "Recent system & security events", ReportTitle = "Event Log", NeedsAdmin = true,
                     Producers = new Func<CheckGroup>[] { SafetyChecks.CheckEventLog }, BuildView = TabViews.BuildEvents },
 
             // -- Protection --
             new() { Category = "Protection", Title = "Virus", Key = "virus",
-                    Banner = "Virus protection", ReportTitle = "Virus",
+                    Banner = "Virus protection", ReportTitle = "Virus", NeedsAdmin = true,
                     Producers = new Func<CheckGroup>[] { SafetyChecks.VirusHeader, SafetyChecks.CheckVirus }, BuildView = TabViews.BuildVirus },
             new() { Category = "Protection", Title = "Restores", Key = "restores",
-                    Banner = "System Restore points", ReportTitle = "Restore Points", AdminOnly = true,
+                    Banner = "System Restore points", ReportTitle = "Restore Points", NeedsAdmin = true,
                     Producers = new Func<CheckGroup>[] { SafetyChecks.CheckRestore }, BuildView = TabViews.BuildRestores },
 
             // -- Browser --

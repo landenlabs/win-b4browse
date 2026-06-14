@@ -2259,8 +2259,12 @@ namespace B4Browse
                 help: TabHelp.Restores,
                 riskRow: o => o is RestorePoint r && r.Risk >= TabSeverity.Caution,
                 headerInfo: SafetyChecks.RestoreHeader,
+                summary: () => Elevation.IsAdmin
+                    ? $"{SafetyChecks.GetRestorePoints().Count} restore point(s)"
+                    : "Requires administrator",
                 severity: items =>
                 {
+                    if (!Elevation.IsAdmin) return TabSeverity.None;         // can't read unelevated - not an alert
                     if (items.Count == 0) return TabSeverity.Alert;          // disabled / purged - IoC
                     var rps = items.OfType<RestorePoint>().ToList();
                     var s = TabSeverity.Ok;

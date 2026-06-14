@@ -66,7 +66,7 @@ namespace B4Browse
         public MainForm()
         {
             // Version and build date come from AppInfo, which set-version.ps1 keeps in sync.
-            Text = $"B4 Browse - Chrome Safety Check - {AppInfo.Version} - LanDen Labs  {AppInfo.BuildDate}";
+            Text = $"B4-Browse - Chrome Safety Check - {AppInfo.Version} - LanDen Labs  {AppInfo.BuildDate}";
             // Window/taskbar icon. Loaded from the embedded multi-resolution icon.ico so it
             // works inside the single-file exe; ExtractAssociatedIcon is only a last resort
             // (it is unreliable against a compressed single-file apphost).
@@ -228,8 +228,8 @@ namespace B4Browse
                 Cursor = Cursors.Hand,
                 Font = new Font("Segoe UI", 9f, FontStyle.Bold),
             };
-            aboutButton.Click += (_, _) => { try { var f = new AboutForm(); f.Show(); } catch { CopyableMessageBox.Show(this, "B4 Browse - Chrome Safety Check\n\nA small tool to inspect Chrome, extensions, and local system indicators relevant to browsing safety.", "About B4 Browse", MessageBoxButtons.OK, MessageBoxIcon.Information); } };
-            tip.SetToolTip(aboutButton, "About B4 Browse");
+            aboutButton.Click += (_, _) => { try { var f = new AboutForm(); f.Show(); } catch { CopyableMessageBox.Show(this, "B4-Browse - Chrome Safety Check\n\nA small tool to inspect Chrome, extensions, and local system indicators relevant to browsing safety.", "About B4-Browse", MessageBoxButtons.OK, MessageBoxIcon.Information); } };
+            tip.SetToolTip(aboutButton, "About B4-Browse");
 
             _leftBottom.Controls.Add(themeIcon);
             _leftBottom.Controls.Add(themeLabel);
@@ -258,7 +258,7 @@ namespace B4Browse
             // Derive a crisp banner bitmap from the app icon (nearest 64px frame) for the Intro page.
             try { if (Icon != null) _introIcon = new Icon(Icon, new Size(64, 64)).ToBitmap(); } catch { }
             _introButton.Click += (_, _) => HelpUi.Show(this, TabHelp.Intro with { Header = _introIcon });
-            _tips.SetToolTip(_introButton, "What B4 Browse does and how to use the categories");
+            _tips.SetToolTip(_introButton, "What B4-Browse does and how to use the categories");
             _introHost.Controls.Add(_introButton);
             StyleIntroButton();   // pastel colours, re-applied on theme change by ApplyThemeColors
 
@@ -984,7 +984,7 @@ namespace B4Browse
             }
 
             // Show the (modal) print dialog after the spinner stops.
-            if (reportText != null) PrintReport(reportText, $"B4 Browse - {tabName}");
+            if (reportText != null) PrintReport(reportText, $"B4-Browse - {tabName}");
         }
 
         /// <summary>

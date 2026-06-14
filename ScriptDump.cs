@@ -75,7 +75,7 @@ namespace B4Browse
                     if (n == 0)
                     {
                         var head = new StringBuilder();
-                        head.Append("# B4 Browse - data-collection ").Append(isCmd ? "command" : "script").Append('\n');
+                        head.Append("# B4-Browse - data-collection ").Append(isCmd ? "command" : "script").Append('\n');
                         head.Append("# Check:  ").Append(source).Append('\n');
                         head.Append("# Runner: ").Append(isCmd
                             ? "RunCapture - launched as an external process (no window; stdout captured)."
@@ -111,8 +111,8 @@ namespace B4Browse
                 lock (_lock) names = _seen.Keys.OrderBy(s => s, StringComparer.OrdinalIgnoreCase).ToList();
 
                 var sb = new StringBuilder();
-                sb.Append("# B4 Browse - data-collection scripts\n\n");
-                sb.Append("A generated snapshot of every PowerShell script and external command B4 Browse\n");
+                sb.Append("# B4-Browse - data-collection scripts\n\n");
+                sb.Append("A generated snapshot of every PowerShell script and external command B4-Browse\n");
                 sb.Append("runs to gather the information shown in each tab - one file per originating check,\n");
                 sb.Append("so you can see exactly *how* each piece of information is collected.\n\n");
                 sb.Append("- `*.ps1` - PowerShell, run through `powershell.exe` (`-NoProfile -NonInteractive`,\n");

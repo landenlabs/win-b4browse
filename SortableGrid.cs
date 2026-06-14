@@ -638,7 +638,7 @@ namespace B4Browse
             }
             catch (Exception ex)
             {
-                CopyableMessageBox.Show(this, $"Could not open '{uri}': {ex.Message}", "B4 Browse",
+                CopyableMessageBox.Show(this, $"Could not open '{uri}': {ex.Message}", "B4-Browse",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }

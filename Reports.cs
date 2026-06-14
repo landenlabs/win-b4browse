@@ -41,7 +41,7 @@ namespace B4Browse
                 : ReportSections.Where(c => c.Key.Equals(scope, StringComparison.OrdinalIgnoreCase)).ToArray();
 
             var sb = new StringBuilder();
-            sb.AppendLine($"B4 Browse report  -  scope: {scope}  -  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"B4-Browse report  -  scope: {scope}  -  {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             sb.AppendLine(new string('=', 70));
 
             int total = sections.Length;

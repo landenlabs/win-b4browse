@@ -72,7 +72,7 @@ namespace B4Browse
                 "When on, Chrome automatically signs you in to sites using a saved password without asking " +
                 "first. Turning it off makes Chrome confirm before using a stored credential."),
             new("Passwords & Autofill", "Saved passwords (count)",
-                "How many passwords this profile has stored in Chrome's password manager. B4 Browse only " +
+                "How many passwords this profile has stored in Chrome's password manager. B4-Browse only " +
                 "counts the rows - it never reads, decrypts, or displays any password or the site it " +
                 "belongs to. A surprisingly large count on an unfamiliar profile is worth a look."),
             new("Passwords & Autofill", "Autofill addresses",

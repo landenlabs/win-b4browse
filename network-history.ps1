@@ -1,9 +1,9 @@
 <#
-  network-history.ps1  --  B4 Browse scratch / evaluation tool (NOT part of the app build).
+  network-history.ps1  --  B4-Browse scratch / evaluation tool (NOT part of the app build).
 
   Dumps the Wi-Fi / network "join history" Windows keeps, so you can see what
   forensic data is actually available on this machine before deciding whether to
-  fold any of it into B4 Browse (proposed item #6).
+  fold any of it into B4-Browse (proposed item #6).
 
   Sources (all read-only):
     * HKLM\...\NetworkList\Profiles    - every network ever joined: name, category,

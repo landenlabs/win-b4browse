@@ -42,6 +42,9 @@ namespace B4Browse
                 new GridColumn { Header = "Installed", Width = 95,
                     Text = o => ((InstalledProgram)o).InstalledText,
                     Sort = o => ((InstalledProgram)o).SortDate },
+                new GridColumn { Header = "Last run", Width = 120,
+                    Text = o => ((InstalledProgram)o).LastRunText,
+                    Sort = o => ((InstalledProgram)o).LastRunSort },
                 new GridColumn { Header = "Version", Width = 110,
                     Text = o => ((InstalledProgram)o).Version,
                     Sort = o => VersionKey(((InstalledProgram)o).Version) },
@@ -1055,7 +1058,7 @@ namespace B4Browse
                     string path = s.ExePath.Length > 0 ? s.ExePath : s.PathRaw;
                     bool system32 = path.IndexOf(@"C:\WINDOWS\system32", StringComparison.OrdinalIgnoreCase) >= 0;
                     bool old = s.DaysOld is >= 30;   // "Old" per the recency rules
-                    return system32 && !old;         // hidden when the All toggle is off
+                    return system32 || old || s.StartMode == "Disabled" ;          // hidden when the All toggle is off
                 }));
             return grid;
         }
@@ -1424,56 +1427,61 @@ namespace B4Browse
             return grid;
         }
 
-        // ---- Awake periods ----------------------------------------------- //
+        // ---- Power events (boot / wake / sleep / shutdown) --------------- //
         public static Control BuildAwake()
         {
             var cols = new[]
             {
+                new GridColumn { Header = "Status", Width = 80,
+                    Text = o => ((PowerEventRow)o).Unexpected ? "Review" : "OK",
+                    Sort = o => (int)((PowerEventRow)o).Risk,
+                    Style = o => ((PowerEventRow)o).Unexpected ? ((Color, Color)?)(YelBack, YelFore) : null },
                 new GridColumn { Header = "#", Width = 54,
-                    Text = o => ((AwakePeriod)o).Index.ToString(),
-                    Sort = o => ((AwakePeriod)o).Index },
-                new GridColumn { Header = "Start", Width = 130,
-                    Text = o => ((AwakePeriod)o).StartText,
-                    Sort = o => ((AwakePeriod)o).Start },
-                new GridColumn { Header = "Woke by", Width = 170,
-                    Text = o => ((AwakePeriod)o).Why,
+                    Text = o => ((PowerEventRow)o).Index.ToString(),
+                    Sort = o => ((PowerEventRow)o).Index },
+                new GridColumn { Header = "Date / time", Width = 168,
+                    Text = o => ((PowerEventRow)o).TimeText,
+                    Sort = o => ((PowerEventRow)o).Time },
+                new GridColumn { Header = "Action", Width = 168,
+                    Text = o => ((PowerEventRow)o).Action,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Detail", Fill = 200,
+                    Text = o => ((PowerEventRow)o).Detail,
                     FilterKind = ColumnFilterKind.Regex },
-                new GridColumn { Header = "End", Width = 130,
-                    Text = o => ((AwakePeriod)o).EndText,
-                    Sort = o => ((AwakePeriod)o).EndSort,
-                    Style = o => AwakeRowStyle((AwakePeriod)o) },
-                new GridColumn { Header = "Ended", Width = 130,
-                    Text = o => ((AwakePeriod)o).EndModeText,
-                    Sort = o => ((AwakePeriod)o).EndCode,
-                    Style = o => AwakeRowStyle((AwakePeriod)o),
-                    FilterKind = ColumnFilterKind.Regex },
-                new GridColumn { Header = "Duration", Width = 96,
-                    Text = o => ((AwakePeriod)o).DurationText,
-                    Sort = o => ((AwakePeriod)o).DurationMin },
+                new GridColumn { Header = "Power", Width = 92,
+                    Text = o => ((PowerEventRow)o).PowerText,
+                    Sort = o => ((PowerEventRow)o).BatteryPct },
+                new GridColumn { Header = "Gap", Width = 90,
+                    Text = o => ((PowerEventRow)o).GapText,
+                    Sort = o => ((PowerEventRow)o).GapMin },
+                new GridColumn { Header = "Event ID", Width = 78,
+                    Text = o => ((PowerEventRow)o).EventId.ToString(),
+                    Sort = o => ((PowerEventRow)o).EventId,
+                    FilterKind = ColumnFilterKind.Dropdown },
             };
             return new SortableGrid("Refresh",
-                () => SafetyChecks.GetAwakePeriods().Cast<object>().ToList(),
-                cols, defaultSortColumn: 1, defaultAscending: false,   // newest first
+                () => SafetyChecks.GetPowerEvents().Cast<object>().ToList(),
+                cols, defaultSortColumn: 2, defaultAscending: false,   // newest first by time
                 extraButtons: new (string, Action)[] { ("Event Viewer", OpenEventViewer) },
+                headerInfo: SafetyChecks.WakeSourcesHeader,
+                headerHeight: 100,
                 help: TabHelp.Awake,
-                riskRow: o => o is AwakePeriod p && p.Unexpected,
+                riskRow: o => o is PowerEventRow p && p.Unexpected,
                 summary: () =>
                 {
-                    var ps = SafetyChecks.GetAwakePeriods();
-                    int unexpected = ps.Count(p => p.Unexpected);
-                    return unexpected > 0 ? $"{unexpected} ended unexpectedly (pwr)" : "all clean";
+                    var rows = SafetyChecks.GetPowerEvents();
+                    int unexpected = rows.Count(r => ((PowerEventRow)r).Unexpected);
+                    return unexpected > 0
+                        ? $"{unexpected} unexpected power loss/shutdown"
+                        : $"{rows.Count} event(s)";
                 },
                 severity: AwakeSeverity);
         }
 
-        // Current session -> green; an unexpected (no clean shutdown) end -> yellow.
-        private static (Color Back, Color Fore)? AwakeRowStyle(AwakePeriod p)
-            => p.Current ? (GrnBack, GrnFore) : p.Unexpected ? (YelBack, YelFore) : ((Color, Color)?)null;
-
         private static TabSeverity AwakeSeverity(System.Collections.Generic.IReadOnlyList<object> items)
         {
             foreach (var o in items)
-                if (o is AwakePeriod p && p.Unexpected) return TabSeverity.Caution;
+                if (o is PowerEventRow p && p.Unexpected) return TabSeverity.Caution;
             return TabSeverity.None;
         }
 

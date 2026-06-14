@@ -29,6 +29,16 @@ namespace B4Browse
         /// <summary>Display string for the Installed column ("yyyy-MM-dd" or "—").</summary>
         public string InstalledText = "";
 
+        /// <summary>Last time the program's executable was launched, from the PCA launch log
+        /// (C:\Windows\appcompat\pca\PcaAppLaunchDic.txt); null when there is no match.</summary>
+        public DateTime? LastRun;
+
+        /// <summary>Sort key for the Last-run column (MinValue when unknown, so blanks sink).</summary>
+        public DateTime LastRunSort;
+
+        /// <summary>Display string for the Last-run column ("yyyy-MM-dd HH:mm"), or "" when no match.</summary>
+        public string LastRunText = "";
+
         /// <summary>winget package source (winget / msstore / ...), or "" when unknown.</summary>
         public string Source = "";
 

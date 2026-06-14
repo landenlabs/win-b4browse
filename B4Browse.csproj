@@ -15,7 +15,7 @@
     <!-- targeted runtime identifiers for publishing self-contained or RID-specific assets -->
     <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
     <Company>LanDen Labs</Company>
-    <Product>B4 Browse</Product>
+    <Product>B4-Browse</Product>
     <Description>Verifies the network and OS are in a safe state before running the Chrome browser.</Description>
     <!-- Application.SetColorMode / SystemColorMode are still experimental (WFO5001). -->
     <NoWarn>$(NoWarn);WFO5001</NoWarn>
@@ -28,6 +28,13 @@
     <None Remove="landenlabs_400.gif" />
     <None Remove="landenlabs_400.png" />
     <None Remove="links.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Stamp the build date into assembly metadata so AppInfo.BuildDate (read at runtime) is
+         always current. Date-only granularity means the generated attribute changes at most once
+         a day, so it doesn't force a recompile on every build. -->
+    <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::Now.ToString('dd-MMM-yyyy'))" />
   </ItemGroup>
 
   <ItemGroup>

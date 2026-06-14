@@ -1,4 +1,4 @@
-# B4 Browse - data-collection script
+# B4-Browse - data-collection script
 # Check:  GetScheduledTasks
 # Runner: RunPowerShellJson/Array - run as: powershell.exe -NoProfile -NonInteractive
 #         -ExecutionPolicy Bypass -EncodedCommand <base64-utf16(script)>,

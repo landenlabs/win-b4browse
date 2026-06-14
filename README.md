@@ -15,9 +15,9 @@
   </tr>
 </table>
 
-# B4 Browse
+# B4-Browse
 
-**B4 Browse** is a small Windows desktop utility that helps you answer two questions before you trust your machine to browse the web:
+**B4-Browse** is a small Windows desktop utility that helps you answer two questions before you trust your machine to browse the web:
 
 1. **Is my network configuration safe?** — Confirm there is no rogue proxy in the path and that DNS resolution is not being spoofed or silently redirected.
 2. **Has anything changed that shouldn't have?** — Surface files, extensions, programs, processes, services, and drivers that were **modified recently but don't line up with a Windows patch / update date**. A binary that changed last Tuesday when Windows Update didn't run that week is exactly the kind of thing worth a second look.

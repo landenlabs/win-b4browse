@@ -4,122 +4,71 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Text.Json;
 
 namespace B4Browse
 {
     /// <summary>
-    /// Reconstructs recent "awake" periods (boot/wake -> sleep/shutdown) from the System
-    /// event log's power events. Read via Get-WinEvent on the System log, which standard
-    /// users can read (no elevation needed). Wake events carry a "Wake Source" that often
-    /// names what woke the machine - a power button, an input device, or a scheduled task
-    /// (e.g. Windows Update, defrag) - which becomes the "Why" column.
+    /// Lists recent power-state transitions (boot / wake / sleep / hibernate / modern standby /
+    /// shutdown / unexpected power loss) straight from the System event log - one row per event,
+    /// newest first. Read via Get-WinEvent on the System log, which standard users can read (no
+    /// elevation needed). Wake events carry a "Wake Source" that often names what woke the machine
+    /// (a power button, an input device, or a scheduled task), surfaced as the "Detail" column.
+    ///
+    /// Earlier versions tried to pair boot/wake -> sleep/shutdown into "awake periods" and debounce
+    /// the noise, but on Modern Standby (S0) laptops the 506/507 enter/exit-standby pairs fire
+    /// constantly (sometimes same-second), so the pairing dropped real transitions and produced a
+    /// wrong timeline. The tab now lists every event verbatim - the Gap column makes the standby
+    /// churn obvious without hiding anything, and a dirty power-off (41 / 6008) shows as its own row.
     /// </summary>
     public static partial class SafetyChecks
     {
         private const int AwakeDays = 14;
 
-        // Debounce thresholds for Modern Standby (S0) machines, which log frequent connected-standby
-        // cycles (Kernel-Power 506/507) plus short internal sleep blips (42 -> 107 a few seconds apart).
-        private const int MinSleepSec = 60;    // a low-power dip shorter than this is not a real sleep (dropped)
-        private const int MinWakeSec = 180;    // an awake gap shorter than this BETWEEN two sleeps is a
-                                               // maintenance wake, merged so an overnight standby is one period
-
-        private enum AwakeKind { Boot, Wake, Sleep, Shutdown }
-
         /// <summary>A single power-state transition pulled from the System log.</summary>
         private sealed class PowerEvent
         {
             public DateTime Time;
-            public AwakeKind Kind;
-            public string Why = "";    // start trigger (Boot/Wake)
-            public string Code = "";   // end code (Sleep/Shutdown)
-            public bool IsStart => Kind is AwakeKind.Boot or AwakeKind.Wake;
+            public int Id;
+            public string Action = "";      // human label for the transition
+            public string Detail = "";      // wake source / shutdown reason
+            public bool Unexpected;         // dirty power-off (41 / 6008)
+            public string PowerText = "";   // charging state at the event ("AC 100%" / "Batt 87%")
+            public int BatteryPct = -1;     // battery %, -1 when unknown
         }
 
-        /// <summary>The reconstructed awake periods, newest first (for the grid + report).</summary>
-        public static List<AwakePeriod> GetAwakePeriods()
+        /// <summary>Every power event in the window, newest first (for the grid + report).</summary>
+        public static List<PowerEventRow> GetPowerEvents()
         {
             var events = ReadPowerEvents();
-            events.Sort((a, b) => a.Time.CompareTo(b.Time));        // ascending
-            events = CollapsePowerEvents(events);                  // merge duplicate signals of one transition
-            events = DebouncePowerEvents(events);                  // drop S0 blips + merge maintenance wakes
-            events = CollapsePowerEvents(events);                  // re-merge any same-direction left adjacent
+            events.Sort((a, b) => a.Time.CompareTo(b.Time));   // ascending; no collapse, no debounce
 
-            var periods = new List<AwakePeriod>();
-            PowerEvent? openStart = null;
-
-            foreach (var e in events)
+            var rows = new List<PowerEventRow>();
+            DateTime? prev = null;
+            for (int i = 0; i < events.Count; i++)
             {
-                if (e.IsStart)
+                var e = events[i];
+                double gap = prev.HasValue ? (e.Time - prev.Value).TotalMinutes : -1;
+                rows.Add(new PowerEventRow
                 {
-                    // A new start while one is still open => the previous period ended without a
-                    // recorded clean sleep/shutdown (crash / power loss): close it as unexpected.
-                    if (openStart != null)
-                        periods.Add(MakePeriod(openStart, null, "pwr", unexpected: true));
-                    openStart = e;
-                }
-                else if (openStart != null)
-                {
-                    periods.Add(MakePeriod(openStart, e, e.Code.Length > 0 ? e.Code : "off", unexpected: false));
-                    openStart = null;
-                }
-                // an end with nothing open (window began mid-period) is ignored
+                    Index = i + 1,
+                    Time = e.Time,
+                    TimeText = FmtAwakeTime(e.Time),
+                    Action = e.Action,
+                    Detail = e.Detail,
+                    EventId = e.Id,
+                    PowerText = e.PowerText,
+                    BatteryPct = e.BatteryPct,
+                    GapMin = gap,
+                    GapText = gap < 0 ? "—" : FmtDuration(gap),
+                    Unexpected = e.Unexpected,
+                    Risk = e.Unexpected ? TabSeverity.Caution : TabSeverity.Ok,
+                });
+                prev = e.Time;
             }
 
-            // A still-open start is the current session.
-            if (openStart != null)
-                periods.Add(MakePeriod(openStart, null, "on", unexpected: false, current: true));
-
-            for (int i = 0; i < periods.Count; i++) periods[i].Index = i + 1;   // 1 = oldest
-            periods.Reverse();                                                   // newest first
-            return periods;
+            rows.Reverse();   // newest first
+            return rows;
         }
-
-        private static AwakePeriod MakePeriod(PowerEvent start, PowerEvent? end, string code,
-            bool unexpected, bool current = false)
-        {
-            var p = new AwakePeriod
-            {
-                Start = start.Time,
-                StartText = FmtAwakeTime(start.Time),
-                Why = start.Why.Length > 0 ? start.Why : (start.Kind == AwakeKind.Boot ? "Power on" : "Wake"),
-                EndCode = code,
-                Unexpected = unexpected,
-                Current = current,
-            };
-
-            DateTime endTime = current ? DateTime.Now : (end?.Time ?? DateTime.MinValue);
-            p.EndModeText = EndModeLabel(code);
-
-            if (endTime == DateTime.MinValue)               // unknown end (unexpected, no clean close)
-            {
-                p.EndSort = start.Time;
-                p.EndText = "?";
-                p.DurationMin = -1;
-                p.DurationText = "—";
-            }
-            else
-            {
-                p.EndSort = endTime;
-                p.EndText = current ? "now" : FmtAwakeTime(endTime);
-                p.DurationMin = (endTime - start.Time).TotalMinutes;
-                p.DurationText = FmtDuration(p.DurationMin);
-            }
-            return p;
-        }
-
-        /// <summary>Spelled-out end mode for the "Ended" column, from the compact end code.</summary>
-        private static string EndModeLabel(string code) => code switch
-        {
-            "off" => "Shutdown",
-            "slp" => "Sleep",
-            "ms" => "Modern standby",
-            "hib" => "Hibernate",
-            "pwr" => "Unexpected",
-            "on" => "Awake now",
-            _ => code,
-        };
 
         // ---- Reading + classifying the System power events ------------------------------- //
         private static List<PowerEvent> ReadPowerEvents()
@@ -128,22 +77,40 @@ namespace B4Browse
 
             // Power/boot/shutdown event IDs in the System log. Provider is checked in C# so an
             // ID that other providers also use (e.g. 12/13) is only honoured from the right source.
-            // 506/507 are Kernel-Power Modern Standby (S0) enter/exit - the real "sleep" on modern
-            // laptops. For event 42, Target is the entered power state (4 = hibernate / S4).
+            // 506/507 are Kernel-Power Modern Standby (S0) enter/exit. For event 42, Target is the
+            // entered power state (4 = hibernate / S4). 41 (Kernel-Power) and 6008 (EventLog) are the
+            // dirty-power-off signals - a long power-button hold or power loss logs these, not a clean
+            // sleep/shutdown.
+            // For the Modern Standby enter/exit events (506/507) we also pull the battery + AC fields
+            // out of the event's EventData (parsed by name from the XML, since Properties are
+            // positional and reorder across Windows builds): PowerStateAc and the remaining/full
+            // battery capacity at the transition. These give the charging state at each wake.
             string script = $@"
 $ErrorActionPreference='SilentlyContinue'
 $start=(Get-Date).AddDays(-{AwakeDays})
 try {{
-  Get-WinEvent -FilterHashtable @{{LogName='System';Id=1,42,107,506,507,12,13,1074,6005,6006;StartTime=$start}} -MaxEvents 2000 |
+  Get-WinEvent -FilterHashtable @{{LogName='System';Id=41,1,42,107,506,507,12,13,1074,6005,6006,6008;StartTime=$start}} -MaxEvents 2000 |
     ForEach-Object {{
       $m=[string]$_.Message
-      $tgt=''
+      $tgt=''; $ac=''; $bc=''; $bf=''
       if ($_.Id -eq 42 -and $_.Properties.Count -gt 0) {{ try {{ $tgt=[string]$_.Properties[0].Value }} catch {{}} }}
+      if ($_.Id -eq 506 -or $_.Id -eq 507) {{
+        try {{
+          $d=@{{}}
+          foreach ($n in ([xml]$_.ToXml()).Event.EventData.Data) {{ $d[$n.Name]=[string]$n.'#text' }}
+          if ($d.ContainsKey('PowerStateAc')) {{ $ac=$d['PowerStateAc'] }}
+          if ($_.Id -eq 507) {{ $bc=$d['BatteryRemainingCapacityOnExit']; $bf=$d['BatteryFullChargeCapacityOnExit'] }}
+          else {{ $bc=$d['BatteryRemainingCapacityOnEnter']; $bf=$d['BatteryFullChargeCapacityOnEnter'] }}
+        }} catch {{}}
+      }}
       [pscustomobject]@{{
         Time=$_.TimeCreated.ToString('o')
         Id=[int]$_.Id
         Provider=[string]$_.ProviderName
         Target=$tgt
+        Ac=$ac
+        BattCur=$bc
+        BattFull=$bf
         Msg=$m.Substring(0,[Math]::Min(500,$m.Length))
       }}
     }} | ConvertTo-Json -Compress -Depth 3
@@ -153,8 +120,11 @@ try {{
             {
                 if (!DateTime.TryParse(JStr(r, "Time"), null, DateTimeStyles.RoundtripKind, out var t)) continue;
                 DateTime time = t.Kind == DateTimeKind.Utc ? t.ToLocalTime() : t;
-                var pe = ClassifyPowerEvent(JInt(r, "Id"), JStr(r, "Provider"), JStr(r, "Msg"), JStr(r, "Target"), time);
-                if (pe != null) list.Add(pe);
+                int id = JInt(r, "Id");
+                var pe = ClassifyPowerEvent(id, JStr(r, "Provider"), JStr(r, "Msg"), JStr(r, "Target"), time);
+                if (pe == null) continue;
+                (pe.PowerText, pe.BatteryPct) = MakePowerState(id, JStr(r, "Ac"), JStr(r, "BattCur"), JStr(r, "BattFull"));
+                list.Add(pe);
             }
             return list;
         }
@@ -162,109 +132,54 @@ try {{
         private static PowerEvent? ClassifyPowerEvent(int id, string prov, string msg, string target, DateTime time)
         {
             bool Is(string name) => prov.Equals(name, StringComparison.OrdinalIgnoreCase);
+            PowerEvent Ev(string action, string detail = "", bool unexpected = false)
+                => new() { Time = time, Id = id, Action = action, Detail = detail, Unexpected = unexpected };
 
-            // Wake (the Power-Troubleshooter form carries a human "Wake Source").
+            // Wake. The Power-Troubleshooter (1) carries a human "Wake Source" (often "Unknown" on
+            // Modern Standby); the Kernel-Power standby-exit (507) and classic resume (107) carry a
+            // "Reason" - Lid / Input Mouse / Input Keyboard / Power Button / Resume from Hibernate.
             if (id == 1 && Is("Microsoft-Windows-Power-Troubleshooter"))
-                return new PowerEvent { Time = time, Kind = AwakeKind.Wake, Why = WhyFromWakeSource(ExtractField(msg, "Wake Source:")) };
+                return Ev("Wake", WhyFromWakeSource(ExtractField(msg, "Wake Source:")));
             if (id == 107 && Is("Microsoft-Windows-Kernel-Power"))
-                return new PowerEvent { Time = time, Kind = AwakeKind.Wake, Why = "Wake" };
+                return Ev("Wake", ExtractReason(msg));
             if (id == 507 && Is("Microsoft-Windows-Kernel-Power"))   // exit Modern Standby
-                return new PowerEvent { Time = time, Kind = AwakeKind.Wake, Why = "Wake" };
+                return Ev("Wake (exit standby)", ExtractReason(msg));
 
             // Sleep / hibernate. Event 42 Target = 4 means hibernate (S4); Modern Standby is 506.
+            // Both carry a "Reason" - Power Button / Lid / Idle Timeout / Screen Off Request / etc.
             if (id == 42 && Is("Microsoft-Windows-Kernel-Power"))
-                return new PowerEvent { Time = time, Kind = AwakeKind.Sleep, Code = target == "4" ? "hib" : "slp" };
-            if (id == 506 && Is("Microsoft-Windows-Kernel-Power"))   // enter Modern Standby (the real sleep on S0 laptops)
-                return new PowerEvent { Time = time, Kind = AwakeKind.Sleep, Code = "ms" };
+                return Ev(target == "4" ? "Hibernate" : "Sleep", ExtractReason(msg));
+            if (id == 506 && Is("Microsoft-Windows-Kernel-Power"))   // enter Modern Standby
+                return Ev("Sleep (modern standby)", ExtractReason(msg));
 
             // Boot.
             if (id == 12 && Is("Microsoft-Windows-Kernel-General"))
-                return new PowerEvent { Time = time, Kind = AwakeKind.Boot, Why = "Power on" };
+                return Ev("Boot");
             if (id == 6005 && Is("EventLog"))
-                return new PowerEvent { Time = time, Kind = AwakeKind.Boot, Why = "Power on" };
+                return Ev("Boot (log started)");
 
             // Clean shutdown.
             if (id == 13 && Is("Microsoft-Windows-Kernel-General"))
-                return new PowerEvent { Time = time, Kind = AwakeKind.Shutdown, Code = "off" };
+                return Ev("Shutdown");
             if (id == 6006 && Is("EventLog"))
-                return new PowerEvent { Time = time, Kind = AwakeKind.Shutdown, Code = "off" };
+                return Ev("Shutdown (clean)");
             if (id == 1074 && Is("User32"))
-                return new PowerEvent { Time = time, Kind = AwakeKind.Shutdown, Code = "off" };
+                return Ev("Shutdown (initiated)", ExtractField(msg, "reason:"));
+
+            // Dirty power-off - a long power-button hold or power loss lands here, not a clean sleep.
+            if (id == 6008 && Is("EventLog"))
+                return Ev("Unexpected shutdown", unexpected: true);
+            if (id == 41 && Is("Microsoft-Windows-Kernel-Power"))
+                return Ev("Unexpected power loss", unexpected: true);
 
             return null;
         }
 
-        /// <summary>Collapses consecutive same-direction signals of one transition (boot logs 12+6005,
-        /// a shutdown logs 13+6006, a wake logs 1+107) that land within two minutes into one event,
-        /// keeping the most descriptive "Why"/code.</summary>
-        private static List<PowerEvent> CollapsePowerEvents(List<PowerEvent> asc)
-        {
-            var outp = new List<PowerEvent>();
-            foreach (var e in asc)
-            {
-                if (outp.Count > 0)
-                {
-                    var last = outp[^1];
-                    if (last.IsStart == e.IsStart && (e.Time - last.Time).TotalSeconds <= 120)
-                    {
-                        if (e.IsStart && IsGenericWhy(last.Why) && !IsGenericWhy(e.Why)) last.Why = e.Why;
-                        if (!e.IsStart && last.Code.Length == 0) last.Code = e.Code;
-                        continue;   // merged into the earlier signal
-                    }
-                }
-                outp.Add(e);
-            }
-            return outp;
-        }
-
-        /// <summary>
-        /// Removes the two noise patterns a Modern Standby (S0) machine produces, so the table shows
-        /// real rest periods rather than connected-standby churn:
-        ///   1. A short low-power dip - a Sleep immediately followed by a Wake within
-        ///      <see cref="MinSleepSec"/> (the 4-second 42->107 blips, and the 1-2s 506/507 bounce) -
-        ///      isn't a real sleep: drop both transitions so the awake stretch continues.
-        ///   2. A maintenance wake - a Wake (sandwiched between two Sleeps) that re-sleeps within
-        ///      <see cref="MinWakeSec"/> - isn't a real wake: drop both so an overnight standby with
-        ///      periodic wakeups collapses into a single sleep period instead of dozens of rows.
-        /// Iterated to a fixed point, because removing one short interval can expose another. Only
-        /// Sleep/Wake transitions are touched - Boot and Shutdown are real session boundaries.
-        /// </summary>
-        private static List<PowerEvent> DebouncePowerEvents(List<PowerEvent> ev)
-        {
-            bool changed = true;
-            while (changed)
-            {
-                changed = false;
-                for (int i = 0; i + 1 < ev.Count; i++)
-                {
-                    var a = ev[i];
-                    var b = ev[i + 1];
-                    double gap = (b.Time - a.Time).TotalSeconds;
-
-                    // 1. micro-sleep: Sleep -> Wake within MinSleepSec.
-                    if (a.Kind == AwakeKind.Sleep && b.Kind == AwakeKind.Wake && gap < MinSleepSec)
-                    {
-                        ev.RemoveAt(i + 1); ev.RemoveAt(i); changed = true; break;
-                    }
-
-                    // 2. maintenance wake between two sleeps: Sleep -> Wake -> Sleep, the Wake->Sleep gap short.
-                    if (a.Kind == AwakeKind.Wake && b.Kind == AwakeKind.Sleep && gap < MinWakeSec &&
-                        i > 0 && ev[i - 1].Kind == AwakeKind.Sleep)
-                    {
-                        ev.RemoveAt(i + 1); ev.RemoveAt(i); changed = true; break;
-                    }
-                }
-            }
-            return ev;
-        }
-
-        private static bool IsGenericWhy(string w) => w.Length == 0 || w == "Wake" || w == "Power on";
-
-        /// <summary>Classifies a raw "Wake Source: ..." string into a short Why (User / Device /
+        /// <summary>Classifies a raw "Wake Source: ..." string into a short Detail (User / Device /
         /// Scheduler: task / Network / Unknown), keeping the useful detail (e.g. the task name).</summary>
         private static string WhyFromWakeSource(string src)
         {
-            if (src.Length == 0) return "Wake";
+            if (src.Length == 0) return "";
             string s = src.ToLowerInvariant();
 
             if (s.Contains("power button") || s.Contains("button")) return "User (power button)";
@@ -314,6 +229,12 @@ try {{
             return Trunc(trimmed, 40);
         }
 
+        /// <summary>Pulls the "Reason:" value from a Kernel-Power Modern Standby / sleep message
+        /// (e.g. "Lid", "Power Button", "Input Mouse", "Idle Timeout"), trimming the trailing period.
+        /// Event 42's "Sleep Reason:" matches too, since it contains the "Reason:" marker.</summary>
+        private static string ExtractReason(string msg)
+            => ExtractField(msg, "Reason:").TrimEnd('.', ' ').Trim();
+
         /// <summary>Returns the rest of the line after a "Label:" marker in an event message.</summary>
         private static string ExtractField(string msg, string label)
         {
@@ -327,14 +248,41 @@ try {{
 
         private static string FmtAwakeTime(DateTime t)
         {
-            // "6-Jun 11:23am" (lower-case meridiem, no leading zero on day/hour).
-            string s = t.ToString("d-MMM h:mmtt", CultureInfo.InvariantCulture);
+            // "Sun 14-Jun 8:33:49am" (weekday + lower-case meridiem, no leading zero on day/hour).
+            string s = t.ToString("ddd d-MMM h:mm:sstt", CultureInfo.InvariantCulture);
             return s.Replace("AM", "am").Replace("PM", "pm");
+        }
+
+        /// <summary>Builds the "AC 100%" / "Batt 87%" / "73%" charging-state text (and a sortable
+        /// battery %) from the Modern Standby event's PowerStateAc + remaining/full battery capacity.
+        /// Only 506/507 carry these; everything else returns blank.</summary>
+        private static (string Text, int Pct) MakePowerState(int id, string ac, string curS, string fullS)
+        {
+            if (id != 506 && id != 507) return ("", -1);
+
+            long.TryParse(curS, out long cur);
+            long.TryParse(fullS, out long full);
+            int pct = full > 0 ? (int)Math.Round(cur * 100.0 / full) : -1;
+
+            // PowerStateAc is recorded on the standby-exit (507) event; 506 doesn't carry it.
+            string src = ac.Equals("true", StringComparison.OrdinalIgnoreCase) ? "AC"
+                       : ac.Equals("false", StringComparison.OrdinalIgnoreCase) ? "Batt"
+                       : "";
+
+            string text = (src, pct >= 0) switch
+            {
+                ("", false) => "",
+                ("", true) => $"{pct}%",
+                (_, false) => src,
+                (_, true) => $"{src} {pct}%",
+            };
+            return (text, pct);
         }
 
         private static string FmtDuration(double minutes)
         {
             if (minutes < 0) return "—";
+            if (minutes < 1) return $"{minutes * 60:0} sec";
             if (minutes < 60) return $"{minutes:0.0} min";
             int h = (int)(minutes / 60);
             int m = (int)Math.Round(minutes - h * 60);
@@ -342,34 +290,96 @@ try {{
             return $"{h}h {m:00}m";
         }
 
-        /// <summary>Report producer (headless / email / copy / print): the awake-period table.</summary>
+        /// <summary>Report producer (headless / email / copy / print): the raw power-event table.</summary>
         public static CheckGroup CheckAwake()
         {
-            var group = new CheckGroup($"Awake / Sleep Periods (last {AwakeDays} days)");
-            var periods = GetAwakePeriods();
-            if (periods.Count == 0)
+            var group = new CheckGroup($"Power Events (last {AwakeDays} days)");
+            var rows = GetPowerEvents();
+            if (rows.Count == 0)
             {
-                group.Add(CheckStatus.Info, "Awake periods",
+                group.Add(CheckStatus.Info, "Power events",
                     "No boot / wake / sleep events found in the System log for this window.");
                 return group;
             }
 
-            int unexpected = periods.Count(p => p.Unexpected);
+            int unexpected = rows.Count(r => r.Unexpected);
             group.Add(unexpected > 0 ? CheckStatus.Warn : CheckStatus.Info,
-                $"{periods.Count} awake period(s)",
+                $"{rows.Count} power event(s)",
                 unexpected > 0
-                    ? $"{unexpected} ended unexpectedly (no clean sleep/shutdown). End codes: off=shutdown, slp=sleep, ms=modern standby, hib=hibernate, pwr=unexpected, on=current."
-                    : "End codes: off=shutdown, slp=sleep, ms=modern standby, hib=hibernate, pwr=unexpected, on=current.");
+                    ? $"{unexpected} unexpected power loss/shutdown (dirty power-off). Newest first; Gap = time since the previous event."
+                    : "Boot / wake / sleep / shutdown transitions, newest first; Gap = time since the previous event.");
 
-            group.AddRow(CheckStatus.Info, AwakeReportRow("#", "Start", "Woke by", "End", "Ended", "Duration"));
-            group.AddRow(CheckStatus.Info, AwakeReportRow("----", "-------------", "------------------", "-------------", "--------------", "----------"));
-            foreach (var p in periods)
-                group.AddRow(p.Unexpected ? CheckStatus.Warn : CheckStatus.Info,
-                    AwakeReportRow(p.Index.ToString(), p.StartText, p.Why, p.EndText, p.EndModeText, p.DurationText));
+            group.AddRow(CheckStatus.Info, AwakeReportRow("#", "Date / time", "Action", "Detail", "Power", "Gap", "Id"));
+            group.AddRow(CheckStatus.Info, AwakeReportRow("----", "----------------------", "----------------------", "------------------------------------", "---------", "----------", "-----"));
+            foreach (var r in rows)
+                group.AddRow(r.Unexpected ? CheckStatus.Warn : CheckStatus.Info,
+                    AwakeReportRow(r.Index.ToString(), r.TimeText, r.Action, r.Detail, r.PowerText, r.GapText, r.EventId.ToString()));
             return group;
         }
 
-        private static string AwakeReportRow(string n, string start, string wokeBy, string end, string ended, string dur)
-            => $"  {Trunc(n, 4),-4} {Trunc(start, 14),-14} {Trunc(wokeBy, 18),-18} {Trunc(end, 14),-14} {Trunc(ended, 15),-15} {dur}";
+        private static string AwakeReportRow(string n, string time, string action, string detail, string power, string gap, string id)
+            => $"  {Trunc(n, 4),-4} {Trunc(time, 22),-22} {Trunc(action, 22),-22} {Trunc(detail, 38),-38} {Trunc(power, 9),-9} {Trunc(gap, 10),-10} {id}";
+
+        // ---- "What can wake this PC" header (devices + timers, with adjust links) -------- //
+
+        /// <summary>Header above the Power Events grid: the devices currently armed to wake the
+        /// machine and the wake timers (scheduled tasks), each with a blue link to where it's
+        /// adjusted. Reads powercfg; device/last-wake queries work unelevated, wake-timer listing
+        /// needs admin. Also feeds the headless report.</summary>
+        public static CheckGroup WakeSourcesHeader()
+        {
+            var g = new CheckGroup("What can wake this PC");
+
+            var devices = GetWakeArmedDevices();
+            g.Add(CheckStatus.Info, $"Wake-armed devices ({devices.Count})",
+                    devices.Count > 0 ? string.Join(", ", devices) : "none currently armed")
+                .WithLink("[ Device Manager ]", "devmgmt.msc");
+
+            g.Add(CheckStatus.Info, "Wake timers", GetWakeTimersSummary())
+                .WithLink("[ Task Scheduler ]", "taskschd.msc");
+
+            g.Add(CheckStatus.Info, "Power & sleep",
+                    "sleep timeout, 'allow wake timers', and what closing the lid / power button does")
+                .WithLink("[ Power options ]", "powercfg.cpl");
+
+            return g;
+        }
+
+        /// <summary>Devices currently allowed to wake the machine (powercfg /devicequery wake_armed,
+        /// no elevation needed): mouse, keyboard, network adapter, USB hubs, etc.</summary>
+        private static List<string> GetWakeArmedDevices()
+        {
+            var list = new List<string>();
+            string? outp = RunCapture("powercfg.exe", "/devicequery wake_armed", 8000);
+            if (outp == null) return list;
+            foreach (var raw in outp.Split('\n'))
+            {
+                string t = raw.Trim();
+                if (t.Length == 0 || t.Equals("NONE", StringComparison.OrdinalIgnoreCase)) continue;
+                list.Add(t);
+            }
+            return list;
+        }
+
+        /// <summary>One-line summary of the active wake timers (powercfg /waketimers). That command
+        /// needs administrator; unelevated it just prints a notice, surfaced here as such.</summary>
+        private static string GetWakeTimersSummary()
+        {
+            string? outp = RunCapture("powercfg.exe", "/waketimers", 8000, includeStdErr: true);
+            if (string.IsNullOrWhiteSpace(outp)) return "none active";
+            if (outp.Contains("requires administrator", StringComparison.OrdinalIgnoreCase))
+                return "requires administrator to list (run as admin)";
+            if (outp.Contains("no active wake timers", StringComparison.OrdinalIgnoreCase))
+                return "none active";
+
+            // Each timer block has a "Reason:" line - show how many, plus the first reason.
+            var reasons = outp.Split('\n')
+                .Select(l => l.Trim())
+                .Where(l => l.StartsWith("Reason:", StringComparison.OrdinalIgnoreCase))
+                .Select(l => l[7..].Trim())
+                .ToList();
+            if (reasons.Count == 0) return "active (see Task Scheduler)";
+            return reasons.Count == 1 ? reasons[0] : $"{reasons.Count} active - e.g. {Trunc(reasons[0], 60)}";
+        }
     }
 }

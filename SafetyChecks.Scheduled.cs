@@ -26,7 +26,7 @@ namespace B4Browse
             // One pass: Get-ScheduledTask for definition (actions, principal, registration date),
             // piped through Get-ScheduledTaskInfo for the last/next run times. Each task is
             // fault-isolated so one unreadable entry can't abort the enumeration.
-            const string script = @"
+            const string script1 = @"
 $ErrorActionPreference='SilentlyContinue'
 @(Get-ScheduledTask | ForEach-Object {
   $t=$_
@@ -37,6 +37,58 @@ $ErrorActionPreference='SilentlyContinue'
   $rep=''
   foreach($trg in @($t.Triggers | Where-Object { $_ })){ if($trg.Repetition -and $trg.Repetition.Interval){ $rep=[string]$trg.Repetition.Interval; break } }
   if(-not $rep){ foreach($trg in @($t.Triggers | Where-Object { $_ })){ if($trg.PSObject.Properties['DaysInterval'] -and [int]$trg.DaysInterval -ge 1){ $rep='P'+([int]$trg.DaysInterval)+'D'; break } } }
+  [pscustomobject]@{
+    Name=[string]$t.TaskName
+    Path=[string]$t.TaskPath
+    State=[string]$t.State
+    Author=[string]$t.Author
+    RunAs=[string]$t.Principal.UserId
+    Hidden=[bool]$t.Settings.Hidden
+    Execute=[string]$a.Execute
+    Arguments=[string]$a.Arguments
+    Created=[string]$t.Date
+    LastRun=$(if($i -and $i.LastRunTime){$i.LastRunTime.ToString('o')}else{''})
+    NextRun=$(if($i -and $i.NextRunTime){$i.NextRunTime.ToString('o')}else{''})
+    Repeat=[string]$rep
+  }
+}) | ConvertTo-Json -Compress -Depth 4";
+
+            const string script = @"
+$ErrorActionPreference='SilentlyContinue'
+@(Get-ScheduledTask | ForEach-Object {
+  $t=$_
+  $a=($t.Actions | Where-Object { $_.Execute } | Select-Object -First 1)
+  $i=$null; try { $i = $t | Get-ScheduledTaskInfo } catch {}
+  
+  # Repeat period evaluation
+  $rep=''
+  
+  # 1. Prefer a trigger's sub-pattern repetition (e.g., ISO-8601 'every X minutes/hours')
+  foreach($trg in @($t.Triggers | Where-Object { $_ })){ if($trg.Repetition -and $trg.Repetition.Interval){ $rep=[string]$trg.Repetition.Interval; break } }
+  
+  # 2. Prefer a daily trigger's day interval (e.g., 'every 3 days' -> P3D)
+  if(-not $rep){ foreach($trg in @($t.Triggers | Where-Object { $_ })){ if($trg.PSObject.Properties['DaysInterval'] -and [int]$trg.DaysInterval -ge 1){ $rep='P'+([int]$trg.DaysInterval)+'D'; break } } }
+  
+  # 3. Fallback: Identify special event-based, startup, and calendar triggers
+  if(-not $rep){
+    foreach($trg in @($t.Triggers | Where-Object { $_ })){
+      $className = $trg.CimClass.CimClassName
+      $rep = switch ($className) {
+        'MSFT_TaskLogonTrigger'        { 'At log on' }
+        'MSFT_TaskBootTrigger'         { 'At startup' }
+        'MSFT_TaskIdleTrigger'         { 'On idle' }
+        'MSFT_TaskRegistrationTrigger' { 'At task creation/modification' }
+        'MSFT_TaskEventTrigger'        { 'On event' }
+        'MSFT_TaskWeeklyTrigger'       { 'Weekly' }
+        'MSFT_TaskMonthlyTrigger'      { 'Monthly' }
+        'MSFT_TaskMonthlyDOWTrigger'   { 'Monthly (Day of Week)' }
+        'MSFT_TaskTimeTrigger'         { 'One time' }
+        Default                        { '' }
+      }
+      if($rep){ break } # Stop at the first identified special trigger
+    }
+  }
+
   [pscustomobject]@{
     Name=[string]$t.TaskName
     Path=[string]$t.TaskPath
@@ -100,7 +152,7 @@ $ErrorActionPreference='SilentlyContinue'
 
         /// <summary>
         /// Enables or disables a scheduled task via <c>Enable-/Disable-ScheduledTask</c>. The spawned
-        /// PowerShell inherits this process's privileges, so it succeeds only when B4 Browse is
+        /// PowerShell inherits this process's privileges, so it succeeds only when B4-Browse is
         /// running elevated (and even then some protected <c>\Microsoft\Windows\</c> tasks owned by
         /// TrustedInstaller may refuse). Never throws; returns (ok, message) for the UI to display.
         /// </summary>
@@ -133,11 +185,15 @@ $ErrorActionPreference='SilentlyContinue'
         /// </summary>
         private static (string Text, double Minutes) FormatRepeat(string iso)
         {
-            if (string.IsNullOrEmpty(iso)) return ("—", 0);
+            if (string.IsNullOrEmpty(iso)) 
+                return ("—", 0);
             TimeSpan ts;
             try { ts = System.Xml.XmlConvert.ToTimeSpan(iso); }
-            catch { return ("—", 0); }
-            if (ts <= TimeSpan.Zero) return ("—", 0);
+            catch {
+                return (iso, 0); 
+            }
+            if (ts <= TimeSpan.Zero) 
+                return ("—", 0);
 
             string text;
             if (ts.TotalDays >= 1)

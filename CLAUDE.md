@@ -1,4 +1,4 @@
-# B4 Browse — project index
+# B4-Browse — project index
 
 Windows desktop utility (C# WinForms) that verifies the network and OS are in a safe
 state before browsing. Two jobs: (1) confirm the network path is clean — no rogue proxy,
@@ -126,15 +126,19 @@ Virus tab uses `DefenderModels.cs`: `DefenderStatusSummary` (WMI state), `Threat
   three diagnostic runners (`RunPowerShellJson`, `RunPowerShellArray`, `RunCapture`) and the
   `Reports.Build` producer-exception catch feed it; viewed via `ErrorLogDialog`.
 
-## Versioning — keep in sync
+## Versioning — single source
 
-Version lives in several places; **do not hand-edit them individually**.
-`set-version.ps1` is the single source that rewrites all of them on release:
-- `AppInfo.cs` (`Version`, `BuildDate`, `Copyright`) — guarded by the `AUTO-VERSION` marker comment.
-- `VERSION` file, `README.md` `<!-- VERSION -->` / `<!-- DATE -->` markers.
-- `B4Browse.csproj` `<Version>` / `<Copyright>` (drive the exe's file/product version).
+`B4Browse.csproj` `<Version>` is the **one** number to change; everything else derives from it.
+`set-version.ps1` (a generic bumper — it only knows `<Version>` in `.csproj`, the `VERSION` file,
+and the `README.md` `<!-- VERSION -->` / `<!-- DATE -->` markers) rewrites those on release.
 
-`AppInfo` is the runtime source for the version shown in-app.
+`AppInfo` is the runtime source for the version shown in-app, and it **reads from the assembly**,
+not a hand-edited constant: `<Version>` → `AssemblyInformationalVersion` → `AppInfo.Version`, and a
+build-time-stamped `AssemblyMetadata("BuildDate")` (added in the csproj) → `AppInfo.BuildDate`. So the
+in-app version follows the csproj automatically — there is no second constant to keep in sync. (It used
+to be a hand-edited `AppInfo.Version` constant that `set-version.ps1` never actually touched, which is
+why older builds displayed a stale version.) `Copyright` (and its 4-digit year) is still hand-kept in
+the csproj `<Copyright>` and the `AppInfo.Copyright` constant.
 
 ## Conventions
 - Files are flat in the repo root, one top-level type per file, `B4Browse` namespace.

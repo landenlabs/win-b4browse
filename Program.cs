@@ -9,7 +9,7 @@ using System.Windows.Forms;
 namespace B4Browse
 {
     /// <summary>
-    /// B4 Browse - confirms the machine is in a safe state before browsing.
+    /// B4-Browse - confirms the machine is in a safe state before browsing.
     ///
     /// GUI:        B4Browse.exe
     /// Headless:   B4Browse.exe --run &lt;scope&gt; [--out &lt;file&gt;]

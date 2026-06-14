@@ -20,7 +20,7 @@ namespace B4Browse
         string? Notes,
         string? Error);
 
-    /// <summary>Queries the GitHub Releases API for the newest published B4 Browse release and compares
+    /// <summary>Queries the GitHub Releases API for the newest published B4-Browse release and compares
     /// it to the running <see cref="AppInfo.Version"/>. Network-only, no install side effects - the
     /// "download" step just opens the release page in the browser (replacing a running single-file exe
     /// in place is a separate, larger problem). Safe to call from the UI thread (fully async, no throw).</summary>

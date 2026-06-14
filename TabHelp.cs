@@ -19,9 +19,9 @@ namespace B4Browse
             "- Click any column header to sort; click again to reverse.\n" +
             "- Press Refresh in the toolbar to reload the data.\n";
 
-        public static readonly HelpInfo Intro = new("Welcome to B4 Browse",
-            "# What B4 Browse does\n" +
-            "B4 Browse inspects your Windows PC for common signs of trouble and presents what it finds in " +
+        public static readonly HelpInfo Intro = new("Welcome to B4-Browse",
+            "# What B4-Browse does\n" +
+            "B4-Browse inspects your Windows PC for common signs of trouble and presents what it finds in " +
             "colour-coded tabs, so anything suspicious stands out at a glance. It has two jobs:\n" +
             "\n" +
             "- Confirm the network path is clean - no rogue proxy, no DNS hijack or spoofing - before you browse.\n" +
@@ -32,7 +32,7 @@ namespace B4Browse
             "remove an unsupported extension) are clearly labelled and always ask first.\n" +
             "\n" +
             "# How to use it\n" +
-            "B4 Browse runs the Safety Scan automatically when it opens and shows an overall verdict in the " +
+            "B4-Browse runs the Safety Scan automatically when it opens and shows an overall verdict in the " +
             "banner at the top. From there, work through the tabs along the top.\n" +
             "\n" +
             "A good strategy when you suspect something changed on your machine:\n" +
@@ -72,7 +72,7 @@ namespace B4Browse
             "- Devices - installed device drivers; flags unsigned drivers and risky INF directives.\n" +
             "- Win Extn - third-party File Explorer shell extensions that load inside explorer.exe.\n" +
             "- Events - recent significant Windows event-log entries (errors and security-relevant events).\n" +
-            "- Awake - recent awake / sleep periods, reconstructed from power events.\n" +
+            "- Awake - recent power events (boot / wake / sleep / shutdown), listed straight from the log.\n" +
             "- Activity - how often each app has been launched, from Windows Search's usage index.\n" +
             "- Downloads - per-app bytes received and sent (from SRUM); a high upload from an odd process is a " +
             "possible data-exfiltration signal.\n" +
@@ -85,7 +85,7 @@ namespace B4Browse
             "- Links - curated links to security tools and references.\n" +
             "\n" +
             "# Command line (advanced)\n" +
-            "Most people will only ever use this window, but B4 Browse can also run from a terminal " +
+            "Most people will only ever use this window, but B4-Browse can also run from a terminal " +
             "(PowerShell or Command Prompt) - useful for saving a report, scheduling an unattended check, " +
             "or auditing exactly how it gathers its data:\n" +
             "\n" +
@@ -218,6 +218,12 @@ namespace B4Browse
             "- Scan - a scan Defender ran. 1001 = completed, 1005 = failed (yellow), 1002 = canceled, " +
             "1000 = started.\n" +
             "\n" +
+            "# Scan Cancelled\n" +
+            "Is a common system action when one of the following occurs:\n" +
+            "- Laptop unplugged or power low\n" +
+            "- Scan only when idle and system becomes busy.\n" +
+            "- Signature database updates\n" +
+            "\n" +
             "# Administrator\n" +
             "The protection-status lines read without elevation, but the Defender Operational event log " +
             "(the threat/scan table) is readable only by an administrator. Without elevation the status " +
@@ -271,7 +277,7 @@ namespace B4Browse
             "as KB rows here; the Installed, Devices and Activity tabs cover those.\n" +
             "\n" + Common);
 
-        public static readonly HelpInfo Dns = new("DNS Resolver Cache",
+        public static readonly HelpInfo Dns = new("DNS (Domain Name System) Cache",
             "# What this shows\n" +
             "The live Windows DNS resolver cache (the same data as `ipconfig /displaydns`). It is a snapshot " +
             "only - entries expire on their own TTL and Chrome's Secure DNS (DoH) bypasses this cache entirely.\n" +
@@ -285,12 +291,14 @@ namespace B4Browse
             "- TTL (s) - remaining time-to-live in seconds (counts down; the cache stores no insert date).\n" +
             "- Data    - the resolved answer (IP or target host).\n" +
             "\n" +
+            "# Type\n" +
+            "  A = IPv4 address; AAAA = IPv6; CNAME = canonical name (alias to another name); other types are rare.\n" +
             "# Special actions\n" +
             "- Flush DNS cache - clears the resolver cache, then reloads the (now-empty) view.\n" +
             "- Right-click a row to copy the name or the answer.\n" +
             "\n" + Common);
 
-        public static readonly HelpInfo Arp = new("ARP Neighbor Cache",
+        public static readonly HelpInfo Arp = new("ARP (Address Resolution Protocol) Neighbor Cache",
             "# What this shows\n" +
             "The live IPv4 ARP cache - the local subnet's map of IP address to physical MAC " +
             "address (the modern `Get-NetNeighbor`, equivalent to `arp -a`). It is a snapshot: " +
@@ -347,6 +355,7 @@ namespace B4Browse
             "# Status\n" +
             "- Unsupported - a Manifest V2 (MV2) extension, which Chrome 138+ no longer supports.\n" +
             "- The Modified column is also tinted by recency.\n" +
+            "\n" + Recency +
             "\n" +
             "# The blue links\n" +
             "> The blue links give you quick access to Chrome's matching feature or settings page. If your " +
@@ -360,7 +369,6 @@ namespace B4Browse
             "> 3. Click in Chrome's address (URL) bar.\n" +
             "> 4. Press Ctrl+V to paste the copied link.\n" +
             "> 5. Press Enter.\n" +
-            "\n" + Recency +
             "\n" +
             "# Special actions\n" +
             "- Remove unsupported - after confirmation, deletes the folders of all Manifest V2 " +
@@ -404,7 +412,7 @@ namespace B4Browse
             "picker instead of navigating, just paste (Ctrl+V) into the address bar.\n" +
             "- The saved-password count is a count only - the Login Data database is copied to a temp file " +
             "and the rows are counted; no password is read or decrypted.\n" +
-            "- Columns are fixed when the tab opens. A Chrome profile created while B4 Browse is running " +
+            "- Columns are fixed when the tab opens. A Chrome profile created while B4-Browse is running " +
             "won't get its own column until you restart the app (Refresh reloads values, not columns).\n" +
             "\n" + Common);
 
@@ -495,6 +503,10 @@ namespace B4Browse
             "\n" + Recency +
             "\n" +
             "# Columns\n" +
+            "- Last run - the last time this program's executable was launched, from the Windows PCA " +
+            "launch log (appcompat\\pca). Matched by executable path (the program's exe, or any exe under " +
+            "its install folder), so it is blank when there is no match - the log only records " +
+            "interactive launches, and many components/redistributables never appear in it.\n" +
             "- Update - the newer version winget has available; the cell is highlighted yellow and the " +
             "tab is flagged when any app has a pending update (outdated software is a security signal).\n" +
             "- Source - winget / msstore / blank (registry-only).\n" +
@@ -571,43 +583,60 @@ namespace B4Browse
             "- Right-click a row to open Event Viewer, copy the message, search the web, or show full details.\n" +
             "\n" + Common);
 
-        public static readonly HelpInfo Awake = new("Awake / Sleep Periods",
+        public static readonly HelpInfo Awake = new("Power Events",
             "# What this shows\n" +
-            "Recent periods the computer was awake, reconstructed from the System event log's power " +
-            "events (boot, resume-from-sleep, sleep, and shutdown). Each row is one awake interval, " +
-            "newest first. Reading the System log needs no administrator rights.\n" +
+            "Every power-state transition from the System event log - boot, resume-from-sleep, sleep, " +
+            "hibernate, shutdown, and unexpected power loss - one row per event, newest first. This is a " +
+            "verbatim 1:1 list of what the OS logged (no pairing, no smoothing), so the timeline always " +
+            "matches the log. Reading the System log needs no administrator rights.\n" +
             "\n" +
             "# Columns\n" +
-            "- # - the interval's number (1 = oldest in the window).\n" +
-            "- Start - when the machine booted or woke.\n" +
-            "- Woke by - what started the period (the ON side), from the wake source: a power button / " +
-            "lid / input device (User), a scheduled task such as Windows Update or defrag (Scheduler), a " +
-            "Wake-on-LAN packet (Network), or a cold power-on.\n" +
-            "- End - when the period ended (the timestamp).\n" +
-            "- Ended - how it ended (the OFF side): Shutdown, Sleep, Modern standby, Hibernate, " +
-            "Unexpected (crash / power loss with no clean close), or 'Awake now' for the current session.\n" +
-            "- Duration - how long the machine stayed awake.\n" +
+            "- Status - 'Review' for an unexpected power loss/shutdown, otherwise 'OK'.\n" +
+            "- # - the event's number (1 = oldest in the window).\n" +
+            "- Date / time - when the event was logged.\n" +
+            "- Action - Boot, Wake, Wake (exit standby), Sleep, Sleep (modern standby), Hibernate, " +
+            "Shutdown, Unexpected shutdown, or Unexpected power loss.\n" +
+            "- Detail - for a wake, the wake source: a power button / lid / input device (User), a " +
+            "scheduled task such as Windows Update or defrag (Scheduler), a Wake-on-LAN packet (Network), " +
+            "or Unknown. For an initiated shutdown, the reason.\n" +
+            "- Power - the charging state captured in the event: 'AC 100%' (plugged in) or 'Batt 87%' " +
+            "(on battery). Only the Modern Standby sleep/wake events (506/507) record this, so it is " +
+            "blank for classic sleep, resume, boot and shutdown rows.\n" +
+            "- Gap - time since the previous event, i.e. how long the machine spent in the prior state.\n" +
+            "- Event ID - the raw System-log event id (1, 42, 107, 506/507, 12/13, 41, 6008 ...) for " +
+            "correlating against Event Viewer or the power-events.ps1 helper script.\n" +
+            "\n" +
+            "# What can wake this PC (header)\n" +
+            "Above the table is a summary of what is allowed to wake the machine, each with a link to " +
+            "adjust it:\n" +
+            "- Wake-armed devices - hardware currently permitted to wake the PC (mouse, keyboard, network " +
+            "adapter, USB hubs). Open Device Manager, then a device's Power Management tab to toggle " +
+            "'Allow this device to wake the computer'.\n" +
+            "- Wake timers - scheduled tasks set to wake the PC (e.g. Windows Update, maintenance). Listing " +
+            "the active timers needs administrator; Task Scheduler shows which tasks have 'Wake the computer " +
+            "to run this task' set.\n" +
+            "- Power & sleep - the Power Options control panel: sleep timeout, 'Allow wake timers', and the " +
+            "power-button / lid behaviour.\n" +
             "\n" +
             "# Status colours\n" +
-            "- Green  - the current session (still awake).\n" +
-            "- Yellow - the period ended unexpectedly (no clean sleep/shutdown was logged).\n" +
+            "- Yellow - an unexpected power loss / dirty shutdown (Kernel-Power 41 or EventLog 6008), " +
+            "such as a long power-button hold or a power cut - it leaves no clean sleep/shutdown record.\n" +
             "\n" +
             "# Modern Standby (S0) laptops\n" +
             "Most current laptops sleep via Modern Standby (connected standby) rather than classic S3 " +
-            "sleep. That is recorded as Kernel-Power events 506 (enter) / 507 (exit) and shown with the " +
-            "(ms) end code. Such machines wake briefly many times a night for maintenance; B4 Browse merges " +
-            "those - low-power dips under a minute and awake gaps under three minutes between two sleeps are " +
-            "treated as one rest period - so an overnight standby is a single row, not dozens.\n" +
+            "sleep, recorded as Kernel-Power 506 (enter) / 507 (exit). These can fire many times an hour " +
+            "- sometimes within the same second - so an overnight standby shows as many rows, not one. " +
+            "That is intentional: the Gap column makes the churn obvious (tiny gaps = standby bounce), and " +
+            "nothing is dropped. A real sleep you initiated is the 506 with a long Gap before the next wake.\n" +
             "\n" +
             "# Note\n" +
-            "Covers the last 14 days. When a shutdown wasn't logged cleanly the End time can't be known, " +
-            "so it shows \"? (pwr)\" with no duration. Scheduled-wake task names come straight from the " +
-            "Power-Troubleshooter event text. Hibernate (hib) is detected best-effort from the sleep " +
-            "target state and may appear as (slp) on some hardware.\n" +
+            "Covers the last 14 days. Hibernate is detected best-effort from the event 42 target state and " +
+            "may appear as Sleep on some hardware. Wake-source/task text comes straight from the " +
+            "Power-Troubleshooter event.\n" +
             "\n" +
             "# Special actions\n" +
             "- Event Viewer - opens the Windows Event Viewer to inspect the underlying power events.\n" +
-            "- Filter the 'Woke by' or 'Ended' column with a regular expression.\n" +
+            "- Filter the 'Action', 'Detail', or 'Event ID' column.\n" +
             "\n" + Common);
 
         public static readonly HelpInfo Activity = new("App Launch Activity",
@@ -671,7 +700,7 @@ namespace B4Browse
             "\n" +
             "# Requires administrator\n" +
             "The SRUM database (C:\\Windows\\System32\\sru\\SRUDB.dat) lives under System32 and is held open " +
-            "by the Diagnostic Policy Service, so this tab is empty unless B4 Browse is run as " +
+            "by the Diagnostic Policy Service, so this tab is empty unless B4-Browse is run as " +
             "administrator. The live database is never touched: it is snapshotted to a temp copy with " +
             "esentutl, the throwaway copy is repaired if it was in a dirty-shutdown state, and only that " +
             "copy is read.\n" +
@@ -697,7 +726,7 @@ namespace B4Browse
             "for the app.\n" +
             "\n" + Common);
 
-        public static readonly HelpInfo RootCerts = new("Trusted Root CAs",
+        public static readonly HelpInfo RootCerts = new("Trusted Root Certification Authorities",
             "# What this shows\n" +
             "The certificates in your trusted-root stores (Local Machine + Current User). A root CA is " +
             "trusted to vouch for ANY HTTPS site, so an unexpected root means your encrypted browsing can " +

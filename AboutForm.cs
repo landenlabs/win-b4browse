@@ -19,6 +19,7 @@ namespace B4Browse
         private Button _repoButton = null!;      // opens the GitHub repository in the browser
         private Button _updateButton = null!;    // checks GitHub for a newer release (then offers download)
         private Label _updateStatus = null!;     // result line under the update button
+        private Label _legal = null!;            // copyright + license footer (text only, no links)
         private Button _ok = null!;
         private Image? _introIcon;               // app icon banner reused on the Intro page
         private string? _pendingDownloadUrl;     // set once an update is found; next click opens it
@@ -31,7 +32,7 @@ namespace B4Browse
 
         public AboutForm()
         {
-            Text = "About B4 Browse";
+            Text = "About B4-Browse";
             Icon = EmbeddedAssets.LoadIcon("icon.ico");
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterParent;
@@ -55,7 +56,7 @@ namespace B4Browse
                 Width = ClientSize.Width - 24,
                 Height = 24,
                 Font = new Font("Segoe UI", 11f, FontStyle.Bold),
-                Text = "B4 Browse - Chrome Safety Check",
+                Text = "B4-Browse - Chrome Safety Check",
                 TextAlign = ContentAlignment.MiddleLeft,
             };
 
@@ -111,6 +112,17 @@ namespace B4Browse
                 Text = "",
             };
 
+            // Copyright + license footer. Plain text (no links) sourced from AppInfo so it never
+            // needs separate maintenance.
+            _legal = new Label
+            {
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Theme.Subtle,
+                Font = new Font("Segoe UI", 8.5f),
+                Text = $"© {AppInfo.Copyright}  ·  {AppInfo.Author}\nLicensed under the Apache License 2.0",
+            };
+
             _ok = new Button
             {
                 Text = "OK",
@@ -131,6 +143,7 @@ namespace B4Browse
             Controls.Add(_repoButton);
             Controls.Add(_updateButton);
             Controls.Add(_updateStatus);
+            Controls.Add(_legal);
             Controls.Add(_ok);
 
             LayoutBody();
@@ -282,11 +295,12 @@ namespace B4Browse
             _repoButton.SetBounds(bx, _introButton.Bottom + 8, bw, bh);
             _updateButton.SetBounds(bx, _repoButton.Bottom + 8, bw, bh);
             _updateStatus.SetBounds(12, _updateButton.Bottom + 8, ClientSize.Width - 24, 34);
+            _legal.SetBounds(12, _updateStatus.Bottom + 6, ClientSize.Width - 24, 34);
 
-            // Grow the dialog to fit the content so the OK button always clears the status line,
-            // then pin OK to the bottom-right. The banner image height is dynamic, so the required
+            // Grow the dialog to fit the content so the OK button always clears the footer, then
+            // pin OK to the bottom-right. The banner image height is dynamic, so the required
             // height can't be a fixed constant.
-            int desired = _updateStatus.Bottom + 12 + _ok.Height + 12;
+            int desired = _legal.Bottom + 12 + _ok.Height + 12;
             if (ClientSize.Height != desired)
                 ClientSize = new Size(ClientSize.Width, desired);
             _ok.SetBounds(ClientSize.Width - _ok.Width - 12, ClientSize.Height - _ok.Height - 12, _ok.Width, _ok.Height);

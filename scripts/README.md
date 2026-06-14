@@ -1,6 +1,6 @@
-# B4 Browse - data-collection scripts
+# B4-Browse - data-collection scripts
 
-A generated snapshot of every PowerShell script and external command B4 Browse
+A generated snapshot of every PowerShell script and external command B4-Browse
 runs to gather the information shown in each tab - one file per originating check,
 so you can see exactly *how* each piece of information is collected.
 

@@ -764,6 +764,7 @@ namespace B4Browse
                 bool recent = p.DaysOld is < 14;
                 group.Add(recent || p.HasUpdate ? CheckStatus.Warn : CheckStatus.Info, p.Name,
                     $"{p.InstalledText}  v{p.Version}" +
+                    (p.LastRun != null ? $"  -  last run {p.LastRunText}" : "") +
                     (p.Publisher.Length > 0 ? $"  -  {p.Publisher}" : "") +
                     (p.Source.Length > 0 ? $"  [{p.Source}]" : "") +
                     (p.HasUpdate ? $"   -> v{p.AvailableVersion} available" : "") +
@@ -773,8 +774,10 @@ namespace B4Browse
                 group.Add(CheckStatus.Info, "...", $"{progs.Count - MaxList} more not shown.");
 
             int updates = progs.Count(p => p.HasUpdate);
+            int withRun = progs.Count(p => p.LastRun != null);
             group.Add(updates > 0 ? CheckStatus.Warn : CheckStatus.Info, "Total installed",
                 $"{progs.Count} program(s)" +
+                (withRun > 0 ? $"; {withRun} with a recorded last-run time" : "") +
                 (updates > 0 ? $"; {updates} have an update available (run `winget upgrade`)." : "."));
             return group;
         }
@@ -827,7 +830,75 @@ namespace B4Browse
             }
 
             EnrichWithWinget(list);
+            MergeLastRun(list);
             return list;
+        }
+
+        /// <summary>
+        /// Populates each program's <see cref="InstalledProgram.LastRun"/> from the PCA launch log
+        /// (the same source the Activity tab uses), matched on the resolved main-executable path
+        /// first, then - only when that misses - on the most recent launch of any executable under a
+        /// specific install directory. Matching is path-based (no fuzzy name match), so a hit means
+        /// that program's binary actually ran. No rows are added or removed; programs with no match
+        /// (or when the log is unreadable - it lives under C:\Windows and may need admin) keep a blank
+        /// Last-run cell.
+        /// </summary>
+        private static void MergeLastRun(List<InstalledProgram> list)
+        {
+            Dictionary<string, DateTime> pca = LoadPcaLaunchTimes();   // full path -> last run (local), case-insensitive
+            if (pca.Count == 0) return;
+            var entries = pca.Select(kv => (Path: kv.Key, When: kv.Value)).ToList();
+
+            foreach (var p in list)
+            {
+                DateTime? best = null;
+
+                // 1. Exact match on the resolved main executable (highest confidence).
+                if (!string.IsNullOrEmpty(p.ExePath) && pca.TryGetValue(p.ExePath!, out var exact))
+                    best = exact;
+
+                // 2. Fallback only when the main exe didn't match: the most recent launch of anything
+                //    under a specific install directory (generic roots are excluded to avoid bogus hits).
+                if (best == null)
+                {
+                    string dir = NormalizeInstallDir(p.InstallLocation);
+                    if (dir.Length > 0)
+                        foreach (var e in entries)
+                            if (e.Path.StartsWith(dir, StringComparison.OrdinalIgnoreCase) &&
+                                (best == null || e.When > best.Value))
+                                best = e.When;
+                }
+
+                if (best != null)
+                {
+                    p.LastRun = best;
+                    p.LastRunSort = best.Value;
+                    p.LastRunText = best.Value.ToString("yyyy-MM-dd HH:mm");
+                }
+            }
+        }
+
+        // Install dirs that are too generic to prefix-match safely (would attribute unrelated exes).
+        private static readonly string[] GenericInstallRoots =
+        {
+            "Program Files", "Program Files (x86)", "Windows", "Windows\\System32",
+            "ProgramData", "Users", "Users\\Public",
+        };
+
+        /// <summary>An install directory trimmed to a prefix-safe form ending in a separator, or ""
+        /// when it's missing or too generic (a bare drive, or a standard root like C:\Program Files).</summary>
+        private static string NormalizeInstallDir(string loc)
+        {
+            string d = (loc ?? "").Trim().Trim('"').TrimEnd('\\', '/');
+            if (d.Length < 4) return "";   // empty or a bare drive like "C:"
+
+            string tail = d.Length > 2 && d[1] == ':' ? d[2..].TrimStart('\\', '/') : d;
+            if (tail.Length == 0) return "";   // drive root only
+
+            foreach (var generic in GenericInstallRoots)
+                if (tail.Equals(generic, StringComparison.OrdinalIgnoreCase)) return "";
+
+            return d + "\\";
         }
 
         /// <summary>

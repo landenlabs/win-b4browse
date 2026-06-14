@@ -35,6 +35,7 @@ namespace B4Browse
         private readonly Dictionary<Catalog.Section, Control> _views = new();   // lazily built + cached
         private Catalog.Section? _current;             // the currently shown section
         private Font _navBoldFont = null!;             // category-row font (owner-draw)
+        private Font _navBadgeFont = null!;            // small right-aligned count badge (owner-draw)
         private ResultsView _scanView = null!;
         private readonly BusyOverlay _emailBusy = new();
         private Panel _toolbar = null!;
@@ -272,6 +273,7 @@ namespace B4Browse
             _content = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface };
 
             _navBoldFont = new Font("Segoe UI", 10.5f, FontStyle.Bold);
+            _navBadgeFont = new Font("Segoe UI", 8.25f);
             _nav = new TreeView
             {
                 Dock = DockStyle.Fill,
@@ -584,6 +586,10 @@ namespace B4Browse
             // Explicitly paint every button (toolbar, left panel, and inside each tab view).
             Theme.StyleButtons(this);
             StyleIntroButton();   // restore the Intro button's pastel after the generic repaint
+
+            // Native scrollbars (nav tree, grids, rich-text panes, scrolling tool panels) follow the
+            // window theme, not managed colours - retheme them across every built view.
+            Theme.ApplyScrollbarTheme(this);
         }
 
         /// <summary>Paints the left-panel "Introduction" button in a soft, theme-aware pastel blue so it
@@ -642,6 +648,34 @@ namespace B4Browse
         private TabSeverity SevOf(Catalog.Section sec) =>
             _views.TryGetValue(sec, out var v) && v is ITabView tv ? tv.Severity : TabSeverity.None;
 
+        /// <summary>Count summary of a section (null until its view is built and has run).</summary>
+        private (int Total, int Risk)? CountsOf(Catalog.Section sec) =>
+            _views.TryGetValue(sec, out var v) && v is ITabView tv ? tv.NavCounts : null;
+
+        /// <summary>Rolls a category row's badge up from the counts of its visited child sections
+        /// (null when none have run yet).</summary>
+        private (int Total, int Risk)? CategoryCounts(TreeNode catNode)
+        {
+            int total = 0, risk = 0;
+            bool any = false;
+            foreach (TreeNode child in catNode.Nodes)
+                if (child.Tag is Catalog.Section cs && CountsOf(cs) is { } c)
+                {
+                    total += c.Total;
+                    risk += c.Risk;
+                    any = true;
+                }
+            return any ? (total, risk) : null;
+        }
+
+        /// <summary>Formats a nav count badge: total always, with a "· N⚠" suffix when any item
+        /// warrants review (e.g. "142" or "142 · 3⚠"). Empty string when there is nothing to show.</summary>
+        private static string FormatBadge((int Total, int Risk)? counts)
+        {
+            if (counts is not { } c) return "";
+            return c.Risk > 0 ? $"{c.Total} · {c.Risk}⚠" : c.Total.ToString();
+        }
+
         /// <summary>A section's severity changed (after a run) - repaint the tree + banner.</summary>
         private void OnSectionSeverity()
         {
@@ -660,10 +694,12 @@ namespace B4Browse
 
             TabSeverity sev;
             bool isCategory;
+            (int Total, int Risk)? counts;
             if (node.Tag is Catalog.Section section)
             {
                 isCategory = false;
                 sev = SevOf(section);
+                counts = CountsOf(section);
             }
             else
             {
@@ -671,6 +707,7 @@ namespace B4Browse
                 sev = TabSeverity.None;
                 foreach (TreeNode child in node.Nodes)
                     if (child.Tag is Catalog.Section cs) sev = Sev.Max(sev, SevOf(cs));
+                counts = CategoryCounts(node);
             }
 
             var row = new Rectangle(0, e.Bounds.Top, _nav.ClientSize.Width, e.Bounds.Height);
@@ -681,9 +718,29 @@ namespace B4Browse
 
             using (var b = new SolidBrush(back)) e.Graphics.FillRectangle(b, row);
 
+            // Right-aligned count badge, drawn in a muted shade. Section rows show "total · N⚠";
+            // category rows roll up to risk-only ("N⚠") since summing unrelated item counts is noise.
+            // Reserve the badge width so the title's ellipsis stops short rather than overlapping.
+            string badge = isCategory
+                ? (counts is { Risk: > 0 } cc ? $"{cc.Risk}⚠" : "")
+                : FormatBadge(counts);
+            int badgeW = 0;
+            if (badge.Length > 0)
+            {
+                Size bs = TextRenderer.MeasureText(e.Graphics, badge, _navBadgeFont);
+                badgeW = bs.Width;
+                var badgeRect = new Rectangle(row.Width - badgeW - 10, e.Bounds.Top, badgeW, e.Bounds.Height);
+                Color badgeFore = sev == TabSeverity.None
+                    ? Theme.Subtle
+                    : Color.FromArgb(70, 70, 70);   // dark-but-muted on a light severity tint
+                TextRenderer.DrawText(e.Graphics, badge, _navBadgeFont, badgeRect, badgeFore,
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.Right | TextFormatFlags.NoPadding);
+            }
+
             var font = isCategory ? _navBoldFont : _nav.Font;
             int textLeft = isCategory ? 8 : e.Bounds.X;
-            var textRect = new Rectangle(textLeft, e.Bounds.Top, row.Width - textLeft - 4, e.Bounds.Height);
+            int textRight = badgeW > 0 ? badgeW + 16 : 4;   // leave a gap before the badge
+            var textRect = new Rectangle(textLeft, e.Bounds.Top, row.Width - textLeft - textRight, e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, node.Text, font, textRect, fore,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis);
         }
@@ -691,6 +748,7 @@ namespace B4Browse
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
+            Theme.ApplyScrollbarTheme(this);   // initial native-scrollbar theme (handles now exist)
             _ = _scanView.RunAsync(); // auto-run the initial tab
             LoadPatchDate();          // fill the toolbar "Patched:" readout off the UI thread
         }

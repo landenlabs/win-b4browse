@@ -51,6 +51,7 @@ namespace B4Browse
         private readonly List<(int Start, int End, string Uri)> _headerLinks = new();
         private readonly BusyOverlay _busy = new();
         private readonly Func<IReadOnlyList<object>, TabSeverity>? _severityEval;
+        private readonly Func<object, bool>? _riskRow;   // per-row "warrants review" test for the nav count badge
         private readonly Action<object>? _onRowContext;
         private readonly CheckBox? _toggle;
         private readonly Func<object, bool>? _hideWhenOff;
@@ -60,6 +61,11 @@ namespace B4Browse
 
         public TabSeverity Severity { get; private set; } = TabSeverity.None;
         public event Action? SeverityChanged;
+
+        /// <summary>Total = loaded rows; Risk = rows matching <see cref="_riskRow"/> (0 when no
+        /// predicate was supplied). Null until the grid has loaded. Drives the nav-row count badge.</summary>
+        public (int Total, int Risk)? NavCounts =>
+            HasRun ? (_items.Count, _riskRow != null ? _items.Count(_riskRow) : 0) : null;
 
         private static Color HdrPass => Theme.IsDark ? Color.FromArgb(90, 200, 100) : Color.FromArgb(0, 140, 0);
         private static Color HdrWarn => Theme.IsDark ? Color.FromArgb(232, 184, 64) : Color.FromArgb(190, 120, 0);
@@ -113,7 +119,8 @@ namespace B4Browse
             (string Label, string Tooltip, Func<object, bool> HideWhenOff)? showAllToggle = null,
             (string Label, Action OnClick)? headerButton = null,
             HelpInfo? help = null,
-            int headerHeight = 104)
+            int headerHeight = 104,
+            Func<object, bool>? riskRow = null)
         {
             _loader = loader;
             _cols = columns;
@@ -121,6 +128,7 @@ namespace B4Browse
             _summary = summary;
             _headerInfo = headerInfo;
             _severityEval = severity;
+            _riskRow = riskRow;
             _onRowContext = onRowContext;
             _sortCol = defaultSortColumn;
             _asc = defaultAscending;
@@ -309,6 +317,7 @@ namespace B4Browse
             Theme.Changed += OnThemeChanged;
             Theme.ScaleChanged += OnScaleChanged;
             Disposed += (_, _) => { Theme.Changed -= OnThemeChanged; Theme.ScaleChanged -= OnScaleChanged; };
+            HandleCreated += (_, _) => Theme.ApplyScrollbarTheme(this);   // theme native grid scrollbars
         }
 
         private void OnThemeChanged()
@@ -377,6 +386,7 @@ namespace B4Browse
 
             if (_items.Count > 0) Populate();          // re-apply default cell colours
             if (_lastHeader != null) RenderHeader(_lastHeader);
+            Theme.ApplyScrollbarTheme(this);           // re-theme native grid / header scrollbars
         }
 
         private void CenterBusy()
@@ -808,6 +818,7 @@ namespace B4Browse
             UpdateSortGlyphs();
             _grid.ResumeLayout();
             if (_autoFitPending) { AutoFitColumns(); _autoFitPending = false; }
+            if (IsHandleCreated) Theme.ApplyScrollbarTheme(this);   // scrollbars may have just appeared
 
             if (_filterCount != null)
             {

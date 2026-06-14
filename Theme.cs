@@ -4,6 +4,7 @@ using System;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 namespace B4Browse
@@ -87,6 +88,35 @@ namespace B4Browse
                 if (c is Button b) StyleButton(b);
                 if (c.HasChildren) StyleButtons(c);
             }
+        }
+
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetWindowTheme(IntPtr hWnd, string? pszSubAppName, string? pszSubIdList);
+
+        /// <summary>True for controls with native, OS-drawn scrollbars that ignore managed
+        /// BackColor/ForeColor and instead follow the window theme.</summary>
+        private static bool WantsScrollbarTheme(Control c) =>
+            c is DataGridView or RichTextBox or TreeView or ListView or ScrollBar
+            || (c is ScrollableControl sc && sc.AutoScroll);
+
+        /// <summary>
+        /// Applies the matching dark/light <em>window</em> theme to every scrollable control under
+        /// <paramref name="root"/> so their native scrollbars follow the theme (grids and rich-text
+        /// panes otherwise keep light scrollbars in dark mode). Managed colours can't reach these
+        /// non-client scrollbars; <c>SetWindowTheme</c> can. Idempotent; skips not-yet-created handles
+        /// and leaves non-scrolling controls (buttons, labels) untouched.
+        /// </summary>
+        public static void ApplyScrollbarTheme(Control? root)
+        {
+            if (root == null) return;
+            string sub = IsDark ? "DarkMode_Explorer" : "Explorer";
+            void Walk(Control c)
+            {
+                if (c.IsHandleCreated && WantsScrollbarTheme(c))
+                    try { SetWindowTheme(c.Handle, sub, null); } catch { /* best-effort */ }
+                foreach (Control child in c.Controls) Walk(child);
+            }
+            Walk(root);
         }
 
         /// <summary>Neutral (not-yet-run) tab/banner colour.</summary>

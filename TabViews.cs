@@ -60,6 +60,7 @@ namespace B4Browse
                 onButtonClick: o => { var p = (InstalledProgram)o; ShowScanMenu(grid, p.Name, () => SafetyChecks.ResolveExeForScan(p)); },
                 extraButtons: new (string, Action)[] { ("Apps && features…", OpenAppsSettings) },
                 help: TabHelp.Installed,
+                riskRow: o => o is InstalledProgram p && (Sev.FromDays(p.DaysOld) >= TabSeverity.Caution || p.HasUpdate),
                 onRowContext: o => ShowInstalledMenu(grid, (InstalledProgram)o),
                 severity: items =>
                 {
@@ -106,6 +107,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 0, defaultAscending: false,   // flagged rules float to the top
                 extraButtons: new (string, Action)[] { ("Manage Firewall", () => StartShell(grid, "wf.msc")) },
                 help: TabHelp.Firewall,
+                riskRow: o => o is FirewallRule r && r.Risk >= TabSeverity.Caution,
                 headerInfo: SafetyChecks.FirewallRulesHeader,
                 headerHeight: 128,
                 severity: items =>
@@ -555,6 +557,7 @@ namespace B4Browse
                 onButtonClick: o => { var p = (ProcessItem)o; ShowScanMenu(grid, p.Name, () => ExistingPath(p.ExePath)); },
                 extraButtons: new (string, Action)[] { ("Task Manager", OpenTaskManager) },
                 help: TabHelp.Processes,
+                riskRow: o => o is ProcessItem p && Sev.FromDays(p.DaysOld) >= TabSeverity.Caution,
                 severity: items => WorstDays(items, o => (o as ProcessItem)?.DaysOld),
                 onRowContext: o => ShowProcessMenu(grid, (ProcessItem)o),
                 showAllToggle: ("All",
@@ -632,6 +635,7 @@ namespace B4Browse
                     ("Device Manager", OpenDeviceManager),
                 },
                 help: TabHelp.Devices,
+                riskRow: o => o is DeviceDriver d && (Sev.FromDays(d.DaysOld) >= TabSeverity.Caution || !d.Signed || (d.Inf?.Risk ?? TabSeverity.None) >= TabSeverity.Caution),
                 severity: items =>
                 {
                     var s = TabSeverity.None;
@@ -761,6 +765,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 2, defaultAscending: true,
                 extraButtons: new (string, Action)[] { (RemoveExtBtnLabel, () => RemoveUnsupportedExtensions(grid)) },
                 help: TabHelp.Chrome,
+                riskRow: o => o is ChromeExtension x && (Sev.FromDays(x.DaysOld) >= TabSeverity.Caution || x.Unsupported),
                 headerInfo: SafetyChecks.CheckChromeHeader,
                 headerHeight: 174,
                 severity: items =>
@@ -823,6 +828,7 @@ namespace B4Browse
                 () => SafetyChecks.GetChromeSettings().Rows.Cast<object>().ToList(),
                 cols.ToArray(), defaultSortColumn: 1, defaultAscending: true,   // grouped by category
                 help: TabHelp.Settings,
+                riskRow: o => o is SettingRow r && r.Risk.Values.Any(v => v >= TabSeverity.Caution),
                 summary: () =>
                 {
                     int profiles = SafetyChecks.GetChromeSettingColumns().Count(c => !c.IsGlobal);
@@ -1038,6 +1044,7 @@ namespace B4Browse
                 () => SafetyChecks.GetServices().Cast<object>().ToList(),
                 cols, defaultSortColumn: 1, defaultAscending: false,
                 help: TabHelp.Services,
+                riskRow: o => o is ServiceInfo s && Sev.FromDays(s.DaysOld) >= TabSeverity.Caution,
                 severity: items => WorstDays(items, o => (o as ServiceInfo)?.DaysOld),
                 onRowContext: o => ShowServiceMenu(grid, (ServiceInfo)o),
                 showAllToggle: ("All",
@@ -1128,6 +1135,7 @@ namespace B4Browse
                 onButtonClick: o => { var it = (StartupItem)o; ShowScanMenu(grid, it.Name, () => ExistingPath(it.ExePath)); },
                 extraButtons: new (string, Action)[] { ("Manage startup", () => StartShell(grid, "ms-settings:startupapps")) },
                 help: TabHelp.Startup,
+                riskRow: o => o is StartupItem s && Sev.FromDays(s.DaysOld) >= TabSeverity.Caution,
                 severity: items => WorstDays(items, o => (o as StartupItem)?.DaysOld),
                 showAllToggle: ("All", "Show disabled startup entries too (off = only enabled)",
                     o => !((StartupItem)o).Enabled),
@@ -1253,6 +1261,7 @@ namespace B4Browse
                 onButtonClick: o => { var t = (ScheduledTaskItem)o; ShowScanMenu(grid, t.Name, () => ExistingPath(t.ExePath)); },
                 extraButtons: new (string, Action)[] { ("Open Task Scheduler", () => StartShell(grid, "taskschd.msc")) },
                 help: TabHelp.Scheduled,
+                riskRow: o => o is ScheduledTaskItem t && Sev.Max(t.Risk, Sev.FromDays(t.DaysOld)) >= TabSeverity.Caution,
                 severity: items =>
                 {
                     var tasks = items.OfType<ScheduledTaskItem>().ToList();
@@ -1409,6 +1418,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 1, defaultAscending: false,
                 extraButtons: new (string, Action)[] { ("Event Viewer", OpenEventViewer) },
                 help: TabHelp.Events,
+                riskRow: o => o is EventItem e && EventIsRisk(e),
                 severity: WorstEvents,
                 onRowContext: o => ShowEventMenu(grid, (EventItem)o));
             return grid;
@@ -1446,6 +1456,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 1, defaultAscending: false,   // newest first
                 extraButtons: new (string, Action)[] { ("Event Viewer", OpenEventViewer) },
                 help: TabHelp.Awake,
+                riskRow: o => o is AwakePeriod p && p.Unexpected,
                 summary: () =>
                 {
                     var ps = SafetyChecks.GetAwakePeriods();
@@ -1498,6 +1509,7 @@ namespace B4Browse
                 () => SafetyChecks.GetAppActivity().Cast<object>().ToList(),
                 cols, defaultSortColumn: 1, defaultAscending: false,   // most-launched first
                 help: TabHelp.Activity,
+                riskRow: o => o is AppActivity a && a.Risk >= TabSeverity.Caution,
                 summary: () =>
                 {
                     var items = SafetyChecks.GetAppActivity();
@@ -1569,6 +1581,7 @@ namespace B4Browse
                 () => SafetyChecks.GetDownloadUsage().Cast<object>().ToList(),
                 cols, defaultSortColumn: 1, defaultAscending: false,   // heaviest download first
                 help: TabHelp.Downloads,
+                riskRow: o => o is SruNetUsage u && u.Risk >= TabSeverity.Caution,
                 summary: () =>
                 {
                     var items = SafetyChecks.GetDownloadUsage();
@@ -1751,6 +1764,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 1, defaultAscending: false,   // newest first
                 headerInfo: SafetyChecks.VirusHeader,
                 help: TabHelp.Virus,
+                riskRow: o => o is DefenderTimelineRow r && r.Severity >= TabSeverity.Caution,
                 extraButtons: new (string, Action)[] { ("Windows Security", () => StartShell(grid, "windowsdefender:")) },
                 summary: () =>
                 {
@@ -1878,6 +1892,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 0, defaultAscending: false,
                 extraButtons: new (string, Action)[] { ("Manage certificates", () => StartShell(grid, "certlm.msc")) },
                 help: TabHelp.RootCerts,
+                riskRow: o => o is RootCertItem c && c.Severity >= TabSeverity.Caution,
                 severity: RootSeverity,
                 showAllToggle: ("All", "Show well-known public / system roots too (off = only non-public roots to review)",
                     o => ((RootCertItem)o).Expected),
@@ -1942,6 +1957,14 @@ namespace B4Browse
                 _ => 0,
             };
         }
+
+        /// <summary>An event "warrants review" (counts toward the nav risk badge) when it is one we
+        /// flag as significant, or its level is Critical / Error / Warning - matching <see cref="WorstEvents"/>.</summary>
+        private static bool EventIsRisk(EventItem e) =>
+            e.Significant
+            || e.Level.Equals("Critical", StringComparison.OrdinalIgnoreCase)
+            || e.Level.Equals("Error", StringComparison.OrdinalIgnoreCase)
+            || e.Level.Equals("Warning", StringComparison.OrdinalIgnoreCase);
 
         private static TabSeverity WorstEvents(System.Collections.Generic.IReadOnlyList<object> items)
         {
@@ -2059,6 +2082,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 0, defaultAscending: false,
                 extraButtons: new (string, Action)[] { ("Flush DNS cache", () => _ = FlushDnsAndReload(grid)) },
                 help: TabHelp.Dns,
+                riskRow: o => o is DnsCacheEntry e && e.Suspicious,
                 severity: items =>
                 {
                     var s = TabSeverity.None;
@@ -2122,6 +2146,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 0, defaultAscending: false,
                 extraButtons: new (string, Action)[] { ("Resolve vendors", () => _ = ResolveArpVendors(grid)) },
                 help: TabHelp.Arp,
+                riskRow: o => o is ArpEntry e && e.Risk >= TabSeverity.Caution,
                 severity: items =>
                 {
                     var s = TabSeverity.None;
@@ -2232,6 +2257,7 @@ namespace B4Browse
                 () => SafetyChecks.GetRestorePoints().Cast<object>().ToList(),
                 cols, defaultSortColumn: 2, defaultAscending: false,
                 help: TabHelp.Restores,
+                riskRow: o => o is RestorePoint r && r.Risk >= TabSeverity.Caution,
                 headerInfo: SafetyChecks.RestoreHeader,
                 severity: items =>
                 {
@@ -2298,6 +2324,7 @@ namespace B4Browse
                 () => SafetyChecks.GetUserAccounts().Cast<object>().ToList(),
                 cols, defaultSortColumn: 0, defaultAscending: false,
                 help: TabHelp.Users,
+                riskRow: o => o is UserAccount u && u.Risk >= TabSeverity.Caution,
                 headerInfo: SafetyChecks.UsersHeader,
                 severity: items =>
                 {
@@ -2374,6 +2401,7 @@ namespace B4Browse
                 cols, defaultSortColumn: 0, defaultAscending: false,
                 extraButtons: new (string, Action)[] { ("Verify signatures", () => _ = VerifyWinExt(grid)) },
                 help: TabHelp.WinExt,
+                riskRow: o => o is ShellExtension e && e.Risk >= TabSeverity.Caution,
                 severity: items =>
                 {
                     var s = TabSeverity.None;

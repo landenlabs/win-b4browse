@@ -22,6 +22,13 @@ namespace B4Browse
 
         /// <summary>Raised when <see cref="Severity"/> changes (after a run).</summary>
         event Action? SeverityChanged;
+
+        /// <summary>
+        /// Count summary for the nav row, or null until the view has produced data. <c>Total</c> is
+        /// the number of items/checks; <c>Risk</c> is the subset that warrant review (0 when the
+        /// view has no per-item risk notion). Refreshed alongside <see cref="SeverityChanged"/>.
+        /// </summary>
+        (int Total, int Risk)? NavCounts { get; }
     }
 
     /// <summary>
@@ -80,6 +87,25 @@ namespace B4Browse
 
         public TabSeverity Severity { get; private set; } = TabSeverity.None;
         public event Action? SeverityChanged;
+
+        /// <summary>Total = graded checks (Pass/Warn/Fail, excluding Info and table rows);
+        /// Risk = the Warn/Fail subset. Null until a run has produced groups.</summary>
+        public (int Total, int Risk)? NavCounts
+        {
+            get
+            {
+                if (!HasRun || _networkBlocked || _lastGroups.Count == 0) return null;
+                int total = 0, risk = 0;
+                foreach (var g in _lastGroups)
+                    foreach (var r in g.Results)
+                    {
+                        if (r.Table || r.Status == CheckStatus.Info) continue;
+                        total++;
+                        if (r.Status is CheckStatus.Warn or CheckStatus.Fail) risk++;
+                    }
+                return (total, risk);
+            }
+        }
 
         /// <summary>Raised with the overall verdict after a run (only when reportVerdict is set).</summary>
         public event Action<CheckStatus>? Completed;
@@ -167,6 +193,7 @@ namespace B4Browse
             Theme.Changed += OnThemeChanged;
             Theme.ScaleChanged += OnScaleChanged;
             Disposed += (_, _) => { Theme.Changed -= OnThemeChanged; Theme.ScaleChanged -= OnScaleChanged; };
+            HandleCreated += (_, _) => Theme.ApplyScrollbarTheme(this);   // theme native output scrollbars
         }
 
         private void OnThemeChanged()
@@ -194,6 +221,7 @@ namespace B4Browse
             _status.ForeColor = Theme.Subtle;
             _output.BackColor = Theme.Surface;
             _output.ForeColor = Theme.Text;
+            Theme.ApplyScrollbarTheme(this);   // re-theme the native output scrollbars
             if (HasRun) ReRender();   // recolour existing content (e.g. black text -> light)
         }
 

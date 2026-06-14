@@ -108,7 +108,7 @@ A built-in **Links** tab collects quick references — Chrome Safety Check, Wind
 
 - Requires **.NET 10** (`net10.0-windows`).
 - Build with Visual Studio or `dotnet build`, then run `B4Browse.exe`. The Safety Scan runs automatically on first show.
-- Use **Launch Chrome** to open the browser, and **Email this tab (Chrome)** to share a scan result.
+- Use **Email this tab (Chrome)** to share a scan result.
 
 ### Command-line options
 

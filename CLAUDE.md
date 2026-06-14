@@ -61,7 +61,7 @@ The whole app is built on one small data model and a single declarative catalog:
   output to the terminal.
 
 ### UI layer
-- **`MainForm.cs`** — main window: verdict banner, toolbar (Launch Chrome, Email/Copy/Print),
+- **`MainForm.cs`** — main window: verdict banner, toolbar (Email/Copy/Print),
   and a left **category tree** (`TreeView`, built from `Catalog` and grouped by category) that
   selects sections into a content host. The tree is owner-drawn and severity-tinted: each
   section row colours by its worst state and each category row rolls up the worst of its

@@ -22,7 +22,6 @@ namespace B4Browse
     {
         private readonly Label _banner;
         private readonly Button _toggleButton;
-        private readonly Button _chromeButton;
         private readonly Button _emailButton;
         private readonly Button _copyButton;
         private readonly Button _printButton;
@@ -113,20 +112,6 @@ namespace B4Browse
             _toggleButton.Click += (_, _) => ToggleLeftPanel();
             _tips.SetToolTip(_toggleButton, "Show / hide the category navigation panel");
 
-            // Launch Chrome lives in the toolbar, just right of the panel toggle. Disabled until
-            // the Safety Scan passes (OnScanCompleted re-enables it).
-            _chromeButton = new Button
-            {
-                Text = "Launch Chrome",
-                Width = 130,
-                Height = 28,
-                Top = 7,
-                Left = _toggleButton.Right + 8,
-                FlatStyle = FlatStyle.System,
-                Enabled = false,
-            };
-            _chromeButton.Click += (_, _) => LaunchChrome();
-
             // Email + Copy icon buttons, anchored to the right edge of the toolbar.
             _emailButton = new Button
             {
@@ -189,7 +174,6 @@ namespace B4Browse
                 "Date of the most recent Windows update - use it as a baseline: items on the other tabs that changed after this date, and weren't installed by you, are worth a review");
 
             toolbar.Controls.Add(_toggleButton);
-            toolbar.Controls.Add(_chromeButton);
             toolbar.Controls.Add(_sysInfo);
             toolbar.Controls.Add(_patchInfo);
             toolbar.Controls.Add(_emailButton);
@@ -707,10 +691,7 @@ namespace B4Browse
                 view.Dock = DockStyle.Fill;
                 _content.Controls.Add(view);
                 if (view is ResultsView rv && sec.Key == "scan")
-                {
                     _scanView = rv;
-                    rv.Completed += OnScanCompleted;
-                }
                 if (view is ITabView tv) tv.SeverityChanged += OnSectionSeverity;
                 _views[sec] = view;
             }
@@ -911,12 +892,6 @@ namespace B4Browse
             }
         }
 
-        private void OnScanCompleted(CheckStatus overall)
-        {
-            // The banner is driven by the active tab; here we only gate the Launch Chrome button.
-            _chromeButton.Enabled = overall != CheckStatus.Fail;
-        }
-
         private void ToggleLeftPanel()
         {
             _leftPanel.Visible = !_leftPanel.Visible;
@@ -1105,24 +1080,5 @@ namespace B4Browse
             }
         }
 
-        private void LaunchChrome()
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo("chrome.exe") { UseShellExecute = true });
-            }
-            catch
-            {
-                try
-                {
-                    Process.Start(new ProcessStartInfo("about:blank") { UseShellExecute = true });
-                }
-                catch (Exception ex)
-                {
-                    CopyableMessageBox.Show(this, "Could not launch Chrome: " + ex.Message,
-                        "B4 Browse", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                }
-            }
-        }
     }
 }

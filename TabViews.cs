@@ -74,6 +74,133 @@ namespace B4Browse
             return grid;
         }
 
+        private static void ShowEnvMenu(Control owner, EnvVariableInfo u)
+        {
+            var menu = new ContextMenuStrip();
+
+            // Search web
+            menu.Items.Add($"Search web for this variable ({u.Name})", null, (_, _) => {
+                try {
+                    string q = HttpUtility.UrlEncode($"What is purpose of windows environment variable \"{u.Name}\"");
+                    OpenBrowser("https://www.google.com/search?q=" + q);
+                } catch { }
+            });
+
+            // Copy variable value
+            var copyItem = menu.Items.Add("Copy variable value", null, (_, _) => {
+                try { Clipboard.SetText(u.Value ?? u.RawValue ?? ""); } catch { }
+            });
+            copyItem.Enabled = (u.Value?.Length > 0) || (u.RawValue?.Length > 0);
+
+            // Open path
+            var openItem = menu.Items.Add("Open path", null, (_, _) => {
+                try {
+                    var val = Environment.ExpandEnvironmentVariables(u.Value ?? u.RawValue ?? "");
+                    if (Directory.Exists(val)) StartShell(owner, val);
+                    else if (File.Exists(val)) StartShell(owner, $"/select,\"{val}\"");
+                    else CopyableMessageBox.Show(owner.FindForm(), "Path not found: " + val, "Open path", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                } catch (Exception ex) { CopyableMessageBox.Show(owner.FindForm(), "Could not open path: " + ex.Message, "Open path", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+            });
+            var canOpen = false;
+            try { var vv = Environment.ExpandEnvironmentVariables(u.Value ?? u.RawValue ?? ""); if (Directory.Exists(vv) || File.Exists(vv)) canOpen = true; } catch { }
+            openItem.Enabled = canOpen;
+
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Copy variable name", null, (_, _) => { try { Clipboard.SetText(u.Name); } catch { } });
+
+            menu.Show(Cursor.Position);
+        }
+
+        private static void OpenEnvironmentVariables(Control owner)
+        {
+            try
+            {
+                // Launch the Environment Variables dialog using rundll32
+                Process.Start(new ProcessStartInfo("rundll32.exe", "sysdm.cpl,EditEnvironmentVariables") { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                CopyableMessageBox.Show(owner.FindForm(), "Could not open Environment Variables dialog: " + ex.Message,
+                    "Environment", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        // ---- Environment variables inspector ---------------------------------
+        public static Control BuildEnvList()
+        {
+            SortableGrid grid = null!;
+            var cols = new[]
+            {
+                new GridColumn { Header = "Status", Width = 90,
+                    Text = o => {
+                        var r = (EnvVariableInfo)o;
+                        if (r.HasUserWritablePaths) return "Urgent";
+                        if (r.IsCoreVariableAltered) return "Review";
+                        if (r.HasInvalidPaths) return "Clean";
+                        return "OK";
+                    },
+                    Sort = o => {
+                        var r = (EnvVariableInfo)o; return (int)(r.HasUserWritablePaths ? 3 : r.IsCoreVariableAltered ? 2 : r.HasInvalidPaths ? 1 : 0);
+                    },
+                    Style = o => {
+                        var r = (EnvVariableInfo)o;
+                        if (r.HasUserWritablePaths) return (RedBack, RedFore);
+                        if (r.IsCoreVariableAltered) return (YelBack, YelFore);
+                        return null;
+                    } },
+                new GridColumn { Header = "Name", Width = 170, Text = o => ((EnvVariableInfo)o).Name },
+                new GridColumn { Header = "Scope", Width = 80, Text = o => ((EnvVariableInfo)o).IsMachineScope ? "Machine" : "User" },
+                new GridColumn { Header = "Value", Width = 340, Text = o => ((EnvVariableInfo)o).Value, FilterKind = ColumnFilterKind.Regex },
+                new GridColumn { Header = "Invalid", Width = 70, Text = o => ((EnvVariableInfo)o).HasInvalidPaths ? "Yes" : "" },
+                new GridColumn { Header = "User-writable", Width = 110, Text = o => ((EnvVariableInfo)o).HasUserWritablePaths ? "Yes" : "" },
+                new GridColumn { Header = "Core altered", Width = 100, Text = o => ((EnvVariableInfo)o).IsCoreVariableAltered ? "Yes" : "" },
+                new GridColumn { Header = "Length risk", Width = 90, Text = o => ((EnvVariableInfo)o).IsLengthRisk ? "Yes" : "" },
+                new GridColumn { Header = "Recommendation", Fill = 200, Text = o => ((EnvVariableInfo)o).DiagnosticRecommendation },
+            };
+
+            grid = new SortableGrid("Refresh",
+                () => EnvironmentInspector.InspectAll().Cast<object>().ToList(),
+                cols, defaultSortColumn: 0, defaultAscending: false,
+                onButtonClick: null,
+                extraButtons: new (string, Action)[] { ("Manage env", () => OpenEnvironmentVariables(grid)) },
+                help: TabHelp.EnvList,
+                riskRow: o => o is EnvVariableInfo e && (e.HasInvalidPaths || e.HasUserWritablePaths || e.IsCoreVariableAltered),
+                onRowContext: o => ShowEnvMenu(grid, (EnvVariableInfo)o));
+
+            return grid;
+        }
+
+        private static void OpenAccountSettings(Control owner, UserAccount u)
+        {
+            try
+            {
+                var curSid = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "";
+                bool allowed = Elevation.IsAdmin || (!string.IsNullOrEmpty(u.Sid) && string.Equals(u.Sid, curSid, StringComparison.OrdinalIgnoreCase));
+                if (!allowed)
+                {
+                    CopyableMessageBox.Show(owner.FindForm(), "Manage account requires Administrator privileges for other users.",
+                        "Users", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+
+                if (Elevation.IsAdmin)
+                {
+                    // Local admin: open Local Users and Groups (requires elevation)
+                    StartShell(owner, "lusrmgr.msc");
+                }
+                else
+                {
+                    // Non-admin: open account settings for current user
+                    StartShell(owner, "ms-settings:yourinfo");
+                }
+            }
+            catch (Exception ex)
+            {
+                CopyableMessageBox.Show(owner.FindForm(), "Could not open account settings: " + ex.Message,
+                    "Users", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
         // ---- Firewall: profile posture + scrollable, audited rule list -- //
         public static Control BuildFirewall()
         {
@@ -2330,6 +2457,15 @@ namespace B4Browse
                     Sort = o => (int)((UserAccount)o).Risk,
                     Style = o => UserStyle((UserAccount)o) },
                 new GridColumn { Header = "Account", Width = 150, Text = o => ((UserAccount)o).Name },
+                new GridColumn { Header = "Manage", Width = 90, Button = true, ButtonText = "Open",
+                    Style = o => {
+                        var u = (UserAccount)o;
+                        try {
+                            var curSid = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "";
+                            bool allowed = Elevation.IsAdmin || (!string.IsNullOrEmpty(u.Sid) && string.Equals(u.Sid, curSid, StringComparison.OrdinalIgnoreCase));
+                            return allowed ? null : ((Color, Color)?)(DisBack, DisFore);
+                        } catch { return null; }
+                    } },
                 new GridColumn { Header = "Enabled", Width = 70,
                     Text = o => ((UserAccount)o).Enabled ? "Yes" : "No",
                     Sort = o => ((UserAccount)o).Enabled ? 0 : 1,
@@ -2350,16 +2486,43 @@ namespace B4Browse
                     Text = o => ((UserAccount)o).AccountExpiresText,
                     Sort = o => ((UserAccount)o).AccountExpires ?? DateTime.MaxValue },
                 new GridColumn { Header = "Source", Width = 110, Text = o => ((UserAccount)o).Source },
-                new GridColumn { Header = "Full name", Width = 140, Text = o => ((UserAccount)o).FullName },
+                // Full name column removed (usually blank)
                 new GridColumn { Header = "Profile path", Fill = 150,
                     Text = o => { var p = ((UserAccount)o).ProfilePath; return p.Length > 0 ? p : "—"; } },
-                new GridColumn { Header = "Note", Fill = 180, Text = o => ((UserAccount)o).Note },
+                // Note column removed (usually blank)
             };
 
             SortableGrid grid = null!;
             grid = new SortableGrid("Refresh",
                 () => SafetyChecks.GetUserAccounts().Cast<object>().ToList(),
                 cols, defaultSortColumn: 0, defaultAscending: false,
+                onButtonClick: o => OpenAccountSettings(grid, (UserAccount)o),
+                extraButtons: new (string, Action)[] {
+                    ("Refresh mapping", () => {
+                        if (grid == null) return;
+                        grid.SetStatus("Refreshing profile mappings …");
+                        Task.Run(() => {
+                            try
+                            {
+                                var map = SafetyChecks.EnumerateProfileAccountNames();
+                                try
+                                {
+                                    foreach (var u in grid.Items.OfType<UserAccount>())
+                                    {
+                                        if (u.Sid.Length > 0 && map.TryGetValue(u.Sid, out var acct))
+                                        {
+                                            if (!string.Equals(u.Name, acct, StringComparison.OrdinalIgnoreCase))
+                                                u.Note = (u.Note.Length > 0 ? u.Note + "; " : "") + $"mapped account: {acct}";
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
+                            catch { }
+                            try { grid.BeginInvoke(new Action(() => { grid.RefreshDisplay(); grid.SetStatus("Profile mapping refreshed."); })); } catch { }
+                        });
+                    })
+                },
                 help: TabHelp.Users,
                 riskRow: o => o is UserAccount u && u.Risk >= TabSeverity.Caution,
                 headerInfo: SafetyChecks.UsersHeader,

@@ -235,6 +235,49 @@ namespace B4Browse
             "for the threat name.\n" +
             "\n" + Common);
 
+        public static readonly HelpInfo EnvList = new("Environment Variables",
+            "# What this tab shows\n" +
+            "Inspects system (Machine) and per-user (User) environment variables and highlights common " +
+            "security and hygiene issues. Variables containing ';' are split so each semicolon-separated " +
+            "part appears as its own row in the Value column for precise inspection.\n" +
+            "\n" +
+            "# Status codes\n" +
+            "- Urgent - a machine PATH entry is writable by non-administrative principals (e.g. Everyone, " +
+            "  BUILTIN\\Users, Authenticated Users) with Write/Modify/FullControl rights. This is a high-risk " +
+            "  privilege escalation / persistence vector because an unprivileged user can place an executable or DLL " +
+            "  into that directory and it may be loaded by higher-privilege processes. Fix urgently by removing " +
+            "  the writable principal or tightening the folder ACL.\n" +
+            "- Review - core system variables (ComSpec, windir/SystemRoot) or their targets look altered, or the " +
+            "  path includes unusual storage locations such as AppData\\Local\\Temp or C:\\Users\\Public. These can be " +
+            "  indicators of tampering or persistence. Confirm the intended value and restore defaults if necessary.\n" +
+            "- Clean - a value part points to a non-existent directory (dead PATH entry). Removing these entries reduces " +
+            "  ambiguity and avoids accidental execution of wrong binaries.\n" +
+            "- OK - no immediate problems detected for this value part.\n" +
+            "\n" +
+            "# Columns and meanings\n" +
+            "- Name - the environment variable name (e.g. PATH, ComSpec).\n" +
+            "- Scope - Machine or User. Machine-scope PATH entries are globally visible and higher-risk if writable.\n" +
+            "- Value - the individual semicolon-delimited part (or the whole value when not delimited). Checks are run per-value.\n" +
+            "- Invalid / User-writable / Core altered / Length risk - quick flags summarising the heuristics.\n" +
+            "- Recommendation - concise remediation advice (e.g. remove dead entry, tighten ACLs, restore ComSpec).\n" +
+            "\n" +
+            "# Heuristics used\n" +
+            "- PATH parsing: PATH and Path-like variables are split on ';' and each entry is validated as a directory.\n" +
+            "- Directory existence: non-existent entries are flagged as Clean (remove them).\n" +
+            "- ACL inspection (Machine PATH only): checks whether broad non-admin principals have Allow rights that include " +
+            "  Write/Modify/FullControl and flags Urgent when found. ACL reads are best-effort and may require Administrator rights.\n" +
+            "- Core variables: ComSpec must point to cmd.exe and windir/SystemRoot should match the Windows folder; deviations are flagged Review.\n" +
+            "- Unusual storage: entries under AppData\\Local\\Temp or C:\\Users\\Public are flagged Review as common persistence targets.\n" +
+            "- Length risk: PATH string longer than ~2048 characters is warned as legacy tools may truncate it.\n" +
+            "- Author inference: the inspector attempts to read an executable's Company/Product metadata in each folder to suggest the likely owner of the entry. This is a hint only.\n" +
+            "\n" +
+            "# Notes and actions\n" +
+            "- The Manage env button opens the standard Environment Variables dialog so you can edit values.\n" +
+            "- ACL checks are heuristic and conservative: if you see Urgent, treat it as high priority to investigate, even if the environment is a managed or shared machine.\n" +
+            "- If a Value row is flagged Clean (dead), remove that specific part from the variable rather than deleting the whole variable.\n" +
+            "- For domain-joined machines or Azure AD scenarios, authoritative owner info (who set a variable) often requires central logs or AD/Graph queries and is out of scope for this tab.\n" +
+            "\n" + Common);
+
         public static readonly HelpInfo Patches = new("Windows Patches",
             "# What this shows\n" +
             "Installed Windows updates and hotfixes reported by WMI (Win32_QuickFixEngineering), newest first. " +

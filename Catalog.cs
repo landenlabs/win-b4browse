@@ -137,6 +137,9 @@ namespace B4Browse
             new() { Category = "Protection", Title = "Restores", Key = "restores",
                     Banner = "System Restore points", ReportTitle = "Restore Points", NeedsAdmin = true,
                     Producers = new Func<CheckGroup>[] { SafetyChecks.CheckRestore }, BuildView = TabViews.BuildRestores },
+            new() { Category = "Protection", Title = "Env List", Key = "env",
+                    Banner = "Environment variables", ReportTitle = "Environment Variables",
+                    Producers = new Func<CheckGroup>[] { SafetyChecks.CheckEnvVariables }, BuildView = TabViews.BuildEnvList },
 
             // -- Browser --
             new() { Category = "Browser", Title = "Chrome", Key = "chrome",

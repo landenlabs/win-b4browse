@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading.Tasks;
 
@@ -15,6 +16,11 @@ namespace B4Browse
     public static class ServiceFileInspector
     {
         public static event Action<string>? InspectionCompleted;
+        // Win32 constants for service queries
+        private const int SC_MANAGER_CONNECT = 0x0001;
+        private const int SERVICE_QUERY_STATUS = 0x0004;
+        private const int SC_STATUS_PROCESS_INFO = 0;
+        private const int SERVICE_ACCEPT_SHUTDOWN = 0x00000004;
         private sealed record InspectResult(string Sha256, string SignatureStatus, DateTime Timestamp);
 
         private static readonly ConcurrentDictionary<string, InspectResult> _cache = new(StringComparer.OrdinalIgnoreCase);
@@ -42,6 +48,40 @@ namespace B4Browse
             {
                 return ("", "");
             }
+        }
+
+        /// <summary>
+        /// Returns true if the named service accepts the SERVICE_ACCEPT_SHUTDOWN control.
+        /// Returns null on error (access denied, service not found, or native failure).
+        /// </summary>
+        public static async Task<bool?> ServiceAcceptsShutdownAsync(string serviceName)
+        {
+            if (string.IsNullOrEmpty(serviceName)) return null;
+            return await Task.Run<bool?>(() =>
+            {
+                IntPtr scm = IntPtr.Zero;
+                IntPtr svc = IntPtr.Zero;
+                try
+                {
+                    scm = OpenSCManager(null, null, SC_MANAGER_CONNECT);
+                    if (scm == IntPtr.Zero) return (bool?)null;
+                    svc = OpenService(scm, serviceName, SERVICE_QUERY_STATUS);
+                    if (svc == IntPtr.Zero) return (bool?)null;
+                    var ssp = new SERVICE_STATUS_PROCESS();
+                    int size = Marshal.SizeOf<SERVICE_STATUS_PROCESS>();
+                    if (!QueryServiceStatusEx(svc, SC_STATUS_PROCESS_INFO, ref ssp, size, out int needed))
+                        return (bool?)null;
+                    bool accepts = (ssp.dwControlsAccepted & SERVICE_ACCEPT_SHUTDOWN) != 0;
+                    try { InspectionCompleted?.Invoke(serviceName); } catch { }
+                    return (bool?)accepts;
+                }
+                catch { return (bool?)null; }
+                finally
+                {
+                    try { if (svc != IntPtr.Zero) CloseServiceHandle(svc); } catch { }
+                    try { if (scm != IntPtr.Zero) CloseServiceHandle(scm); } catch { }
+                }
+            }).ConfigureAwait(false);
         }
 
         private static bool FileHasCertificateTable(string path)
@@ -75,6 +115,33 @@ namespace B4Browse
             using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             var hash = await sha.ComputeHashAsync(fs).ConfigureAwait(false);
             return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+        }
+
+        // --- P/Invoke for service queries ---
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, int dwDesiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr OpenService(IntPtr hSCManager, string lpServiceName, int dwDesiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool QueryServiceStatusEx(IntPtr hService, int InfoLevel, ref SERVICE_STATUS_PROCESS lpBuffer, int cbBufSize, out int pcbBytesNeeded);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SERVICE_STATUS_PROCESS
+        {
+            public int dwServiceType;
+            public int dwCurrentState;
+            public int dwControlsAccepted;
+            public int dwWin32ExitCode;
+            public int dwServiceSpecificExitCode;
+            public int dwCheckPoint;
+            public int dwWaitHint;
+            public int dwProcessId;
+            public int dwServiceFlags;
         }
     }
 }

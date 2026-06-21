@@ -37,6 +37,8 @@ namespace B4Browse
                 group.Add(CheckStatus.Warn, "Chrome", "chrome.exe not found in standard install locations.");
                 return group;
             }
+
+
             group.Add(CheckStatus.Info, "Path", exe);
 
             string? installedVer = null;
@@ -247,6 +249,39 @@ namespace B4Browse
             return list;
         }
 
+        // ----------------------------------------------------------------- //
+        // Environment variables inspector (headless producer)
+        // ----------------------------------------------------------------- //
+        public static CheckGroup CheckEnvVariables()
+        {
+            var group = new CheckGroup("Environment Variables");
+            var rows = EnvironmentInspector.InspectAll();
+            if (rows.Count == 0)
+            {
+                group.Add(CheckStatus.Info, "Environment", "No environment variables found or readable.");
+                return group;
+            }
+
+            int issues = rows.Count(r => r.HasInvalidPaths || r.HasUserWritablePaths || r.IsCoreVariableAltered || r.IsLengthRisk);
+            group.Add(issues > 0 ? CheckStatus.Warn : CheckStatus.Pass, "Summary",
+                $"{rows.Count} variables inspected, {issues} with potential issues.");
+
+            int shown = 0;
+            foreach (var r in rows.OrderByDescending(r => (r.HasUserWritablePaths ? 4 : 0) + (r.IsCoreVariableAltered ? 2 : 0) + (r.HasInvalidPaths ? 1 : 0)))
+            {
+                if (++shown > MaxList) break;
+                var st = r.HasUserWritablePaths ? CheckStatus.Fail
+                         : r.IsCoreVariableAltered ? CheckStatus.Warn
+                         : r.HasInvalidPaths ? CheckStatus.Info
+                         : CheckStatus.Pass;
+                group.Add(st, r.Name, r.DiagnosticRecommendation.Length > 0 ? r.DiagnosticRecommendation : r.RawValue);
+            }
+            if (rows.Count > MaxList)
+                group.Add(CheckStatus.Info, "...", $"{rows.Count - MaxList} more not shown.");
+
+            return group;
+        }
+
         /// <summary>Minimum extension manifest_version this Chrome will load (per Last Version).</summary>
         private static int? MinManifestVersion(string? chromeVersion)
         {
@@ -399,8 +434,23 @@ namespace B4Browse
             {
                 if (++shown > MaxList) break;
                 string disp = s.DisplayName.Length > 0 ? s.DisplayName : s.Name;
+                // Enrich diagnostic text when a pending/stuck service also ignores shutdown.
+                string note = "";
+                try
+                {
+                    if (s.IsStuck && s.IgnoresShutdown)
+                    {
+                        note = "  [STUCK & IGNORES SHUTDOWN: may require a cold restart (shutdown /r /t 0)]";
+                    }
+                    else if (s.IgnoresShutdown)
+                    {
+                        note = "  [IGNORES SHUTDOWN]";
+                    }
+                }
+                catch { }
+
                 group.Add(CheckStatus.Info, disp,
-                    $"{s.StartMode}  -  modified {s.ModifiedText}  -  {s.ExePath}");
+                    $"{s.StartMode}  -  modified {s.ModifiedText}  -  {s.ExePath}{note}");
             }
             if (thirdParty.Count > MaxList)
                 group.Add(CheckStatus.Info, "...", $"{thirdParty.Count - MaxList} more not shown.");
@@ -441,16 +491,24 @@ namespace B4Browse
                         }
                     }
                     catch { /* ignore */ }
-                    // Schedule background inspection to compute SHA and signature status.
+                    // Schedule background inspection to compute SHA, signature status, and IGNORES_SHUTDOWN.
                     _ = Task.Run(async () => {
                         try
                         {
                             var (sha, sig) = await ServiceFileInspector.InspectAsync(s.ExePath).ConfigureAwait(false);
                             s.Sha256 = sha;
                             s.SignatureStatus = sig;
-                            // Trigger UI refresh: the grid consumer may call RefreshDisplay when appropriate.
                         }
                         catch { /* ignore */ }
+
+                        try
+                        {
+                            // Query native SCM for dwControlsAccepted. Return null on error; treat null as unknown (leave false).
+                            bool? accepts = await ServiceFileInspector.ServiceAcceptsShutdownAsync(s.Name).ConfigureAwait(false);
+                            if (accepts.HasValue) s.IgnoresShutdown = !accepts.Value;
+                        }
+                        catch { /* ignore */ }
+                        // UI grid will refresh via ServiceFileInspector.InspectionCompleted subscription.
                     });
                 }
                 s.ModifiedSort = s.Modified ?? DateTime.MinValue;

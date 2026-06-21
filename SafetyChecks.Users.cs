@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Microsoft.Win32;
+using System.Security.Principal;
 
 namespace B4Browse
 {
@@ -36,8 +37,7 @@ namespace B4Browse
 
         /// <summary>Structured local-account list (used by the Users grid). Empty only if
         /// Get-LocalUser is unavailable (very old Windows) - it needs no elevation.</summary>
-        public static List<UserAccount> GetUserAccounts()
-        {
+        public static List<UserAccount> GetUserAccounts() {
             // Primary roster + per-account fields from Get-LocalUser. Dates are formatted in
             // PowerShell to a fixed string (empty when $null = "never"), sidestepping the
             // DateTime JSON-serialisation differences between PowerShell versions.
@@ -55,12 +55,11 @@ namespace B4Browse
             var hiddenNames = GetHiddenAccountNames();
             var profilePaths = GetProfileListPaths();
             var createdEvents = GetAccountCreationTimes();   // empty unless elevated (Security log)
+            var lastLogonEvents = GetAccountLastLogonTimes(); // empty unless elevated (Security log)
 
             var list = new List<UserAccount>();
-            foreach (var r in rows)
-            {
-                var u = new UserAccount
-                {
+            foreach (var r in rows) {
+                var u = new UserAccount {
                     Name = Str(r, "Name"),
                     FullName = Str(r, "FullName"),
                     Description = Str(r, "Description"),
@@ -89,14 +88,140 @@ namespace B4Browse
 
                 if (u.Sid.Length > 0 && profilePaths.TryGetValue(u.Sid, out var profile))
                     u.ProfilePath = profile;
+                if (u.ProfilePath.Length > 0)
+                    u.ProfileUserName = Path.GetFileName(u.ProfilePath);
 
                 AssignCreated(u, createdEvents, profilePaths);
                 Classify(u);
                 list.Add(u);
             }
 
+
+
+            // (LastLogon mapping moved later so it can cover profile-only rows added below.)
+
+            // Include profiled non-local accounts (domain / Microsoft accounts that have
+            // a folder under C:\Users but are not listed by Get-LocalUser). This ensures
+            // the currently-running user (whoami) whose profile is present is visible.
+            var existingSids = new HashSet<string>(list.Select(u => u.Sid), StringComparer.OrdinalIgnoreCase);
+            var profNames = EnumerateProfileAccountNames();
+            foreach (var kv in profilePaths)
+            {
+                var sid = kv.Key;
+                var path = kv.Value;
+                if (existingSids.Contains(sid)) continue;
+                // Heuristic: only include SIDs that look like user profile SIDs.
+                if (!sid.StartsWith("S-1-5-21-", StringComparison.OrdinalIgnoreCase) &&
+                    !sid.StartsWith("S-1-12-1-", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var name = profNames.TryGetValue(sid, out var an) ? an : sid;
+                var u = new UserAccount
+                {
+                    Name = name,
+                    FullName = "",
+                    Description = "",
+                    Sid = sid,
+                    Source = "profile",
+                    Enabled = true,
+                    PasswordRequired = true,
+                    ProfilePath = path,
+                    ProfileUserName = Path.GetFileName(path)
+                };
+                u.IsAdmin = adminSids.Contains(sid);
+                u.IsBuiltin = IsBuiltinRid(sid);
+                u.IsHidden = false;
+                AssignCreated(u, createdEvents, profilePaths);
+                Classify(u);
+                list.Add(u);
+            }
+
+            // After adding any profile-only rows, populate LastLogon for all rows using
+            // Security log (4624) when available, otherwise fall back to NTUSER.DAT/profile timestamps.
+            foreach (var u in list)
+            {
+                if (u.LastLogon is null)
+                {
+                    if (u.Sid.Length > 0 && lastLogonEvents.TryGetValue(u.Sid, out var sldt))
+                    {
+                        u.LastLogon = sldt;
+                        u.LastLogonText = sldt.ToString("yyyy-MM-dd HH:mm");
+                        continue;
+                    }
+
+                    if (u.ProfilePath.Length > 0 && TryProfileLastLogon(u.ProfilePath, out var lt))
+                    {
+                        u.LastLogon = lt;
+                        u.LastLogonText = lt.ToString("yyyy-MM-dd HH:mm");
+                    }
+                }
+            }
+
             list.Sort((a, b) => b.Risk.CompareTo(a.Risk));
             return list;
+        }
+
+        /// <summary>
+        /// Enumerates ProfileList SIDs and attempts to translate each SID to an NT account name
+        /// (e.g. AzureAD\user or DOMAIN\user). Returns a map SID -> accountName (or SID when
+        /// translation fails). This is safe to call unelevated.
+        /// </summary>
+        public static Dictionary<string, string> EnumerateProfileAccountNames()
+        {
+            var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey(ProfileListKey);
+                if (key == null) return map;
+                foreach (var sid in key.GetSubKeyNames())
+                {
+                    try
+                    {
+                        string account = sid;
+                        try
+                        {
+                            var sidObj = new SecurityIdentifier(sid);
+                            var nt = (NTAccount)sidObj.Translate(typeof(NTAccount));
+                            if (!string.IsNullOrEmpty(nt.Value)) account = nt.Value;
+                        }
+                        catch { /* leave account as SID when translation fails */ }
+
+                        map[sid] = account;
+                    }
+                    catch { /* skip a single unreadable profile key */ }
+                }
+            }
+            catch { /* fall through to empty */ }
+            return map;
+        }
+
+        /// <summary>Real last-interactive-logon times from Security event 4624, keyed by target SID.
+        /// Only interactive / unlock / remote-interactive logon types are considered (2,7,10).
+        /// Empty unless elevated (the Security log is admin-only) - degrades silently.</summary>
+        private static Dictionary<string, DateTime> GetAccountLastLogonTimes()
+        {
+            var map = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            if (!Elevation.IsAdmin) return map;
+
+            var rows = RunPowerShellArray(@"
+$ErrorActionPreference='SilentlyContinue'
+$ev = Get-WinEvent -FilterHashtable @{LogName='Security';Id=4624} -MaxEvents 2000 -ErrorAction SilentlyContinue
+@($ev | ForEach-Object {
+  $x=[xml]$_.ToXml()
+  $sid=($x.Event.EventData.Data | Where-Object {$_.Name -eq 'TargetSid'}).'#text'
+  $lt=($x.Event.EventData.Data | Where-Object {$_.Name -eq 'LogonType'}).'#text'
+  if ($lt -in @('2','7','10')) { [pscustomobject]@{ Sid=[string]$sid; Time=$_.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss') } }
+}) | ConvertTo-Json -Compress -Depth 3");
+
+            foreach (var r in rows)
+            {
+                string sid = Str(r, "Sid");
+                var t = ParseStamp(Str(r, "Time"));
+                if (sid.Length == 0 || t is null) continue;
+                // Keep the latest 4624 per SID (we want most recent interactive logon).
+                if (!map.TryGetValue(sid, out var prev) || t.Value > prev) map[sid] = t.Value;
+            }
+            return map;
         }
 
         /// <summary>Layered creation date: Security event 4720 (real, admin) -> profile-folder
@@ -305,6 +430,31 @@ $ev = Get-WinEvent -FilterHashtable @{LogName='Security';Id=4720} -MaxEvents 500
             catch { return false; }
         }
 
+        // Best-effort last-logon from profile: use NTUSER.DAT last-write time when present.
+        private static bool TryProfileLastLogon(string profilePath, out DateTime lastLogon)
+        {
+            lastLogon = default;
+            try
+            {
+                if (string.IsNullOrEmpty(profilePath) || !Directory.Exists(profilePath)) return false;
+                var ntuser = Path.Combine(profilePath, "NTUSER.DAT");
+                if (File.Exists(ntuser))
+                {
+                    lastLogon = File.GetLastWriteTime(ntuser);
+                    if (lastLogon.Year > 1980) return true;
+                }
+                // Fallback: profile directory last write
+                var dirWrite = Directory.GetLastWriteTime(profilePath);
+                if (dirWrite.Year > 1980)
+                {
+                    lastLogon = dirWrite;
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static DateTime? ParseStamp(string s) =>
             DateTime.TryParseExact(s, "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture,
                 DateTimeStyles.None, out var dt) ? dt : null;
@@ -369,6 +519,17 @@ $ev = Get-WinEvent -FilterHashtable @{LogName='Security';Id=4720} -MaxEvents 500
                 group.Add(CheckStatus.Info, "Other profiles",
                     $"{profiled} domain / Microsoft account profile(s) have also signed in on this PC (not listed here).");
 
+            // Show the currently running user (whoami) and the user profile folder name.
+            try
+            {
+                var who = Environment.UserDomainName + "\\" + Environment.UserName;
+                var upath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                var pf = upath.Length > 0 ? Path.GetFileName(upath) : "";
+                group.Add(CheckStatus.Info, "Current user",
+                    $"{who} (profile folder: {upath}{(pf.Length>0? $" (profile name: {pf})":"")})");
+            }
+            catch { }
+
             return group;
         }
 
@@ -414,11 +575,18 @@ $ev = Get-WinEvent -FilterHashtable @{LogName='Security';Id=4720} -MaxEvents 500
                     u.IsHidden ? "[hidden]" : "",
                 }.Where(s => s.Length > 0));
 
+                string profileInfo = "";
+                if (u.ProfilePath.Length > 0)
+                {
+                    var pname = Path.GetFileName(u.ProfilePath);
+                    profileInfo = $"  -  {u.ProfilePath} (profile: {pname})";
+                }
+
                 string detail =
                     $"created {u.CreatedText}" +
                     (u.CreatedSource.Length > 0 ? $" ({CreatedSourceLabel(u)})" : "") +
                     $"  -  last logon {u.LastLogonText}" +
-                    (u.ProfilePath.Length > 0 ? $"  -  {u.ProfilePath}" : "") +
+                    profileInfo +
                     (flags.Length > 0 ? $"  {flags}" : "") +
                     (u.Note.Length > 0 ? $"   ({u.Note})" : "");
                 group.Add(st, u.Name, detail);

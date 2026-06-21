@@ -18,6 +18,7 @@ namespace B4Browse
         public string Sid = "";
         public string Source = "";          // PrincipalSource: Local / MicrosoftAccount / AzureAD / ...
         public string ProfilePath = "";     // user profile root dir (ProfileList\<SID>\ProfileImagePath); "" if never profiled
+        public string ProfileUserName = ""; // folder name under C:\Users (e.g. 'alice') when ProfilePath set
 
         public bool Enabled;
         public bool IsAdmin;                // member of Administrators (well-known SID S-1-5-32-544)

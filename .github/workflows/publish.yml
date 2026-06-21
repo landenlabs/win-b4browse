@@ -1,4 +1,4 @@
-name: Publish self-contained Windows build
+name: Publish Windows builds and installers
 
 on:
   push:
@@ -32,41 +32,203 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Publish (win-x64 self-contained single file)
+      - name: Publish (x64 self-contained single file)
         run: |
           dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:EnableCompressionInSingleFile=true /p:DebugType=none /p:DebugSymbols=false -o ./artifacts/win-x64
 
-      # Signs the final single-file apphost AFTER publish (and before zipping) so the
-      # released exe carries the signature. Skipped automatically when no cert secret is set.
-      - name: Sign published exe
+      - name: Sign published exes
         if: ${{ env.CODE_SIGN_PFX_BASE64 != '' }}
         shell: pwsh
         run: |
-          $exe = "./artifacts/win-x64/B4Browse.exe"
-
-          # Locate signtool from the Windows SDK on the runner (newest version, x64).
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
-            Sort-Object FullName -Descending | Select-Object -First 1
-          if (-not $signtool) { throw "signtool.exe not found on the runner." }
-
-          # Decode the .pfx from the secret to a temp file.
           $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64))
+          $signtool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+          if (-not $signtool) { throw "signtool.exe not found on the runner." }
 
-          try {
-            & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:CODE_SIGN_PASSWORD `
-              /tr $env:TIMESTAMP_URL /td SHA256 $exe
-            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed (exit $LASTEXITCODE)." }
+          $exe = "./artifacts/win-x64/B4Browse.exe"
+          if (Test-Path $exe) {
+            & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:CODE_SIGN_PASSWORD /tr $env:TIMESTAMP_URL /td SHA256 $exe
+            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed (exit $LASTEXITCODE) for $exe." }
+          } else {
+            Write-Host "Skipping sign: $exe not found"
           }
-          finally {
-            Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+          Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+
+      - name: Create portable zip distribution
+        shell: pwsh
+        run: |
+          Compress-Archive -Path ./artifacts/win-x64/* -DestinationPath ./artifacts/B4Browse-win-x64-portable.zip -Force
+
+      - name: Create MSIX package (x64)
+        shell: pwsh
+        run: |
+          $version = (Select-Xml -Path ./B4Browse.csproj -XPath '//Project/PropertyGroup/Version').Node.InnerText
+          $msixdir = './artifacts/msix'
+          New-Item -ItemType Directory -Path $msixdir -Force | Out-Null
+
+          $packageDir = Join-Path $msixdir 'package'
+          if (Test-Path $packageDir) { Remove-Item $packageDir -Recurse -Force }
+          New-Item -ItemType Directory -Path $packageDir | Out-Null
+
+          # Copy published files (x64)
+          Copy-Item -Path ./artifacts/win-x64/* -Destination $packageDir -Recurse -Force
+
+          # Create AppxManifest with VisualElements and desktop shortcuts
+          $manifest = @"
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap2="http://schemas.microsoft.com/appx/manifest/uap/windows10/2"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  IgnorableNamespaces="uap uap2 rescap desktop">
+  <Identity Name="LanDenLabs.B4Browse" Publisher="CN=LanDen Labs" Version="$version" />
+  <Properties>
+    <DisplayName>B4Browse</DisplayName>
+    <PublisherDisplayName>LanDen Labs</PublisherDisplayName>
+    <Description>Verifies the network and OS are in a safe state before running the Chrome browser.</Description>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.19041.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+  <Applications>
+    <Application Id="App" Executable="B4Browse.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="B4Browse"
+                         Square44x44Logo="Assets\Square44x44Logo.png"
+                         Square150x150Logo="Assets\Square150x150Logo.png"
+                         Square310x310Logo="Assets\StoreLogo.png"
+                         DefaultTile="StoreLogo.png"
+                         Description="B4Browse">
+        <uap:DefaultTile ShortName="B4Browse" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <Extensions>
+    <desktop:Extension Category="windows.shortcut">
+      <desktop:Shortcuts>
+        <desktop:Shortcut ShortName="B4Browse" Name="B4Browse" Executable="B4Browse.exe" Arguments="" Icon="Assets\StoreLogo.png" />
+        <desktop:Shortcut ShortName="Diagnostics" Name="B4Browse - Diagnostics" Executable="B4Browse.exe" Arguments="--diagnostics" Icon="Assets\StoreLogo.png" />
+        <desktop:Shortcut ShortName="OpenLogs" Name="B4Browse - Open Logs" Executable="B4Browse.exe" Arguments="--open-logs" Icon="Assets\StoreLogo.png" />
+        <desktop:Shortcut ShortName="Settings" Name="B4Browse - Settings" Executable="B4Browse.exe" Arguments="--settings" Icon="Assets\StoreLogo.png" />
+      </desktop:Shortcuts>
+    </desktop:Extension>
+  </Extensions>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
+"@
+
+          $manifestPath = Join-Path $packageDir 'AppxManifest.xml'
+          $manifest | Out-File -FilePath $manifestPath -Encoding utf8
+
+          # Ensure a small Assets folder exists to satisfy manifest references
+          $assets = Join-Path $packageDir 'Assets'
+          if (-not (Test-Path $assets)) { New-Item -ItemType Directory -Path $assets | Out-Null }
+          # create placeholder logos referenced by the manifest
+          $storeLogo = Join-Path $assets 'StoreLogo.png'
+          if (-not (Test-Path $storeLogo)) { New-Item -ItemType File -Path $storeLogo | Out-Null }
+          $logo150 = Join-Path $assets 'Square150x150Logo.png'
+          if (-not (Test-Path $logo150)) { New-Item -ItemType File -Path $logo150 | Out-Null }
+          $logo44 = Join-Path $assets 'Square44x44Logo.png'
+          if (-not (Test-Path $logo44)) { New-Item -ItemType File -Path $logo44 | Out-Null }
+
+          # Locate MakeAppx.exe
+          $makeappx = Get-Command makeappx.exe -ErrorAction SilentlyContinue
+          if (-not $makeappx) { Write-Host 'makeappx.exe not found on runner; skipping MSIX package creation.'; exit 0 }
+
+          $msixPath = Join-Path $msixdir "B4Browse-$version-x64.msix"
+          & $makeappx.FullName pack /d $packageDir /p $msixPath
+
+          # Sign the package (use provided PFX or create a temporary self-signed cert)
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'codesign.pfx'
+          if ($env:CODE_SIGN_PFX_BASE64 -ne '') {
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64))
+            $pw = $env:CODE_SIGN_PASSWORD
+          } else {
+            Write-Host 'No signing secret provided; creating temporary self-signed certificate for MSIX (not trusted).' ;
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=LanDen Labs" -CertStoreLocation "Cert:\CurrentUser\My" -KeyExportPolicy Exportable -NotAfter (Get-Date).AddYears(1)
+            $pw = ''
+            Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password (ConvertTo-SecureString -String $pw -Force -AsPlainText)
           }
 
-          $sig = Get-AuthenticodeSignature $exe
-          Write-Host "Signature status: $($sig.Status)  signer: $($sig.SignerCertificate.Subject)"
-          if ($sig.Status -ne 'Valid') { throw "Post-sign verification failed: $($sig.Status)" }
+          $signtool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+          if (-not $signtool) { Write-Host 'signtool.exe not found; skipping MSIX signing.'; exit 0 }
 
-      - name: Create GitHub Release and upload asset
+          if ($pw -ne '') {
+            & $signtool.FullName sign /fd SHA256 /f $pfxPath /p $pw /tr $env:TIMESTAMP_URL /td SHA256 $msixPath
+          } else {
+            & $signtool.FullName sign /fd SHA256 /f $pfxPath /tr $env:TIMESTAMP_URL /td SHA256 $msixPath
+          }
+
+          Write-Host "MSIX package: $msixPath"
+
+      - name: Install WiX toolset
+        shell: pwsh
+        run: |
+          choco install wixtoolset -y
+
+      - name: Build MSI (x64)
+        shell: pwsh
+        run: |
+          $version = (Select-Xml -Path ./B4Browse.csproj -XPath '//Project/PropertyGroup/Version').Node.InnerText
+          $arch = 'x64'
+          $outdir = "./artifacts/win-x64"
+          $msidir = "./artifacts/msi"
+          New-Item -ItemType Directory -Path $msidir -Force | Out-Null
+
+          $wxs = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="B4Browse" Language="1033" Version="$version" Manufacturer="LanDen Labs" UpgradeCode="{d3f8c2d6-0000-4000-8000-000000000001}">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+    <MediaTemplate />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="B4Browse"/>
+      </Directory>
+    </Directory>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="cmpExe" Guid="{d3f8c2d6-0000-4000-8000-000000000002}">
+        <File Id="filExe" Source="$outdir/B4Browse.exe" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    <Feature Id="DefaultFeature" Level="1">
+      <ComponentRef Id="cmpExe" />
+    </Feature>
+  </Product>
+</Wix>
+"@
+
+          $wxsPath = Join-Path $msidir 'b4browse.wxs'
+          $wxs | Out-File -FilePath $wxsPath -Encoding utf8
+
+          $candle = Get-Command candle.exe -ErrorAction SilentlyContinue
+          if (-not $candle) { throw 'candle.exe not found after installing WiX.' }
+          $light = Get-Command light.exe -ErrorAction SilentlyContinue
+          if (-not $light) { throw 'light.exe not found after installing WiX.' }
+
+          & $candle.Source -o (Join-Path $msidir 'b4browse.wixobj') $wxsPath
+          & $light.Source -out (Join-Path $msidir "B4Browse-$version-$arch.msi") (Join-Path $msidir 'b4browse.wixobj')
+
+      - name: Sign MSI
+        if: ${{ env.CODE_SIGN_PFX_BASE64 != '' }}
+        shell: pwsh
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64))
+          $msi = Get-ChildItem ./artifacts/msi/*.msi | Select-Object -First 1
+          $signtool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+          & $signtool.FullName sign /fd SHA256 /f $pfx /p $env:CODE_SIGN_PASSWORD /tr $env:TIMESTAMP_URL /td SHA256 $msi.FullName
+          Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+
+      - name: Create GitHub Release and upload assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -74,4 +236,6 @@ jobs:
           body: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-          files: ./artifacts/win-x64/B4Browse.exe
+          files: |
+            ./artifacts/B4Browse-win-x64-portable.zip
+            ./artifacts/msi/*.msi

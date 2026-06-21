@@ -13,7 +13,7 @@
     <Version>6.06.16</Version>
     <Copyright>LanDen Labs (2026)</Copyright>
     <!-- targeted runtime identifiers for publishing self-contained or RID-specific assets -->
-    <RuntimeIdentifiers>win-x64;win-x86</RuntimeIdentifiers>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <Company>LanDen Labs</Company>
     <Product>B4-Browse</Product>
     <Description>Verifies the network and OS are in a safe state before running the Chrome browser.</Description>
@@ -39,7 +39,7 @@
 
   <ItemGroup>
     <PackageReference Include="ManagedEsent" Version="2.0.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.9" />
     <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 

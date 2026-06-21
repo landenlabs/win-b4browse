@@ -30,12 +30,7 @@ mono_crash.*
 bin/x64/
 obj/x64/
 
-[Dd]ebug/x86/
-[Dd]ebugPublic/x86/
-[Rr]elease/x86/
-[Rr]eleases/x86/
-bin/x86/
-obj/x86/
+## 32-bit build output removed: repo targets x64 only
 
 [Ww][Ii][Nn]32/
 [Aa][Rr][Mm]/

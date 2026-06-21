@@ -320,6 +320,7 @@ namespace B4Browse
             ["{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27}"] = Environment.SpecialFolder.SystemX86,     // SysWOW64
             ["{F38BF404-1D43-42F2-9305-67DE0B28FC23}"] = Environment.SpecialFolder.Windows,       // Windows
             ["{6D809377-6AF0-444B-8957-A3773F02200E}"] = Environment.SpecialFolder.ProgramFiles,  // Program Files (x64)
+            ["{D65231B0-B2F1-4857-A4CE-A8E7C6EA7D27}"] = Environment.SpecialFolder.System,     // SysWOW64 (map to System32 on x64-only builds)
             ["{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}"] = Environment.SpecialFolder.ProgramFilesX86,
             ["{905E63B6-C1BF-494E-B29C-65B732D3D21A}"] = Environment.SpecialFolder.ProgramFiles,  // Program Files
             ["{F1B32785-6FBA-4FCF-9D55-7B8E7F157091}"] = Environment.SpecialFolder.LocalApplicationData,

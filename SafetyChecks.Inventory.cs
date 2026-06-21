@@ -411,7 +411,7 @@ namespace B4Browse
         public static List<ServiceInfo> GetServices()
         {
             var rows = RunPowerShellArray(
-                "@(Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,PathName) | " +
+                "@(Get-CimInstance Win32_Service | Select-Object Name,DisplayName,State,StartMode,StartName,Description,PathName) | " +
                 "ConvertTo-Json -Compress -Depth 3");
 
             var list = new List<ServiceInfo>();
@@ -424,6 +424,8 @@ namespace B4Browse
                     State = Str(r, "State"),
                     StartMode = Str(r, "StartMode"),
                     PathRaw = Str(r, "PathName"),
+                    Account = Str(r, "StartName"),
+                    Description = Str(r, "Description"),
                 };
                 s.ExePath = ExtractExe(s.PathRaw);
                 if (s.ExePath.Length > 0)
@@ -439,6 +441,17 @@ namespace B4Browse
                         }
                     }
                     catch { /* ignore */ }
+                    // Schedule background inspection to compute SHA and signature status.
+                    _ = Task.Run(async () => {
+                        try
+                        {
+                            var (sha, sig) = await ServiceFileInspector.InspectAsync(s.ExePath).ConfigureAwait(false);
+                            s.Sha256 = sha;
+                            s.SignatureStatus = sig;
+                            // Trigger UI refresh: the grid consumer may call RefreshDisplay when appropriate.
+                        }
+                        catch { /* ignore */ }
+                    });
                 }
                 s.ModifiedSort = s.Modified ?? DateTime.MinValue;
                 s.DaysOld = s.Modified != null ? Math.Max(0, (int)(DateTime.Now - s.Modified.Value).TotalDays) : null;

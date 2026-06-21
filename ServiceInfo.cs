@@ -15,6 +15,16 @@ namespace B4Browse
         public string ExePath = "";       // parsed executable path
         public string Dir = "";           // folder containing the executable
 
+        // Newly added fields for Option A (UI-first incremental enrichment)
+        public string Account = "";       // service StartName / account
+        public string Description = "";   // service description from Win32_Service
+        public bool IsTransitioning = false; // StartPending / StopPending
+        public DateTime? TransitionSince = null; // approximate time when a transition was observed
+        public bool IsStuck = false;        // observed stuck state (to be set by background poller)
+        public bool IgnoresShutdown = false; // SERVICE_ACCEPT_SHUTDOWN not accepted
+        public string Sha256 = "";         // file hash (computed by background inspector)
+        public string SignatureStatus = ""; // authenticode/signature status
+
         /// <summary>Last-write time of the service executable on disk.</summary>
         public DateTime? Modified;
         public string ModifiedText = "—";

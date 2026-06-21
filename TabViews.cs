@@ -572,6 +572,18 @@ namespace B4Browse
                     bool recent = p.DaysOld is >= 0 and < 30;   // installed/updated within the last 30 days
                     return !(unusual && recent);   // when off, show ONLY unusual + recently changed
                 }));
+            // Subscribe to background inspection completion so the grid can refresh incrementally.
+            ServiceFileInspector.InspectionCompleted += path => {
+                // The inspection provides a path; refresh the grid on the UI thread.
+                try
+                {
+                    if (grid != null && grid.IsHandleCreated)
+                    {
+                        grid.BeginInvoke(new Action(() => grid.RefreshDisplay()));
+                    }
+                }
+                catch { }
+            };
             return grid;
         }
         private static void ShowProcessMenu(Control owner, ProcessItem proc) {
@@ -1040,6 +1052,19 @@ namespace B4Browse
                 new GridColumn { Header = "Run mode", Width = 86, Text = o => ((ServiceInfo)o).StartMode },
                 new GridColumn { Header = "Service name", Fill = 120,
                     Text = o => { var s = (ServiceInfo)o; return s.DisplayName.Length > 0 ? s.DisplayName : s.Name; } },
+                new GridColumn { Header = "Account", Width = 160, Text = o => ((ServiceInfo)o).Account },
+                new GridColumn { Header = "Publisher", Width = 120, Text = o => ((ServiceInfo)o).SignatureStatus },
+                new GridColumn { Header = "Transition", Width = 100, Text = o => {
+                        var s = (ServiceInfo)o;
+                        if (s.IsStuck) return "Stuck";
+                        if (s.IsTransitioning) return "Pending";
+                        return s.State;
+                    }, Style = o => {
+                        var s = (ServiceInfo)o;
+                        if (s.IsStuck) return (Color.FromArgb(220, 110, 110), Theme.Text);
+                        if (s.IsTransitioning) return (Color.FromArgb(232, 184, 64), Theme.Text);
+                        return (Color.Empty, Color.Empty);
+                    } },
                 new GridColumn { Header = "Path", Fill = 170,
                     Text = o => { var s = (ServiceInfo)o; return s.ExePath.Length > 0 ? s.ExePath : s.PathRaw; } },
             };
@@ -1049,7 +1074,7 @@ namespace B4Browse
                 help: TabHelp.Services,
                 riskRow: o => o is ServiceInfo s && Sev.FromDays(s.DaysOld) >= TabSeverity.Caution,
                 severity: items => WorstDays(items, o => (o as ServiceInfo)?.DaysOld),
-                onRowContext: o => ShowServiceMenu(grid, (ServiceInfo)o),
+                onRowContext: o => ShowServiceMenu(grid, (ServiceInfo)o), // no-op context update
                 showAllToggle: ("All",
                     "Off: hide recent C:\\Windows\\system32 services to reduce noise.  On: show every installed service.",
                     o =>

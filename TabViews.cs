@@ -1176,10 +1176,18 @@ namespace B4Browse
                 new GridColumn { Header = "Modified", Width = 95,
                     Text = o => ((ServiceInfo)o).ModifiedText,
                     Sort = o => ((ServiceInfo)o).ModifiedSort },
-                new GridColumn { Header = "Run mode", Width = 86, Text = o => ((ServiceInfo)o).StartMode },
+                new GridColumn { Header = "Run mode", Width = 86,
+                    Text = o => ((ServiceInfo)o).StartMode,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Short name", Width = 110,
+                    Text = o => ((ServiceInfo)o).Name,
+                    FilterKind = ColumnFilterKind.Regex },
                 new GridColumn { Header = "Service name", Fill = 120,
-                    Text = o => { var s = (ServiceInfo)o; return s.DisplayName.Length > 0 ? s.DisplayName : s.Name; } },
-                new GridColumn { Header = "Account", Width = 160, Text = o => ((ServiceInfo)o).Account },
+                    Text = o => { var s = (ServiceInfo)o; return s.DisplayName.Length > 0 ? s.DisplayName : s.Name; },
+                    FilterKind = ColumnFilterKind.Regex },
+                new GridColumn { Header = "Account", Width = 130,
+                    Text = o => ((ServiceInfo)o).Account,
+                    FilterKind = ColumnFilterKind.Dropdown },
                 new GridColumn { Header = "Publisher", Width = 120, Text = o => ((ServiceInfo)o).SignatureStatus },
                 new GridColumn { Header = "Transition", Width = 100, Text = o => {
                         var s = (ServiceInfo)o;
@@ -1192,8 +1200,24 @@ namespace B4Browse
                         if (s.IsTransitioning) return (Color.FromArgb(232, 184, 64), Theme.Text);
                         return (Color.Empty, Color.Empty);
                     } },
+                new GridColumn { Header = "Flags", Width = 140,
+                    Text = o => {
+                        var s = (ServiceInfo)o;
+                        var parts = new System.Collections.Generic.List<string>();
+                        if (s.IsPendingDelete) parts.Add("Pending delete");
+                        if (s.IgnoresShutdown) parts.Add("Ignores shutdown");
+                        return string.Join(", ", parts);
+                    },
+                    Style = o => {
+                        var s = (ServiceInfo)o;
+                        if (s.IsPendingDelete) return (Color.FromArgb(220, 110, 110), Theme.Text);
+                        if (s.IgnoresShutdown) return (Color.FromArgb(232, 184, 64), Theme.Text);
+                        return (Color.Empty, Color.Empty);
+                    },
+                    FilterKind = ColumnFilterKind.Dropdown },
                 new GridColumn { Header = "Path", Fill = 170,
-                    Text = o => { var s = (ServiceInfo)o; return s.ExePath.Length > 0 ? s.ExePath : s.PathRaw; } },
+                    Text = o => { var s = (ServiceInfo)o; return s.ExePath.Length > 0 ? s.ExePath : s.PathRaw; },
+                    FilterKind = ColumnFilterKind.Regex },
             };
             grid = new SortableGrid("Refresh",
                 () => SafetyChecks.GetServices().Cast<object>().ToList(),
@@ -1220,12 +1244,21 @@ namespace B4Browse
             var menu = new ContextMenuStrip();
             menu.Items.Add("Open Services console (services.msc)", null, (_, _) => OpenServicesConsole(owner));
 
-            var folder = new ToolStripMenuItem("Open service folder", null, (_, _) => OpenServiceFolder(owner, svc))
+            var folder = new ToolStripMenuItem("Open in File Explorer", null, (_, _) => OpenServiceFolder(owner, svc))
             { Enabled = svc.ExePath.Length > 0 && (File.Exists(svc.ExePath) || Directory.Exists(svc.Dir)) };
             menu.Items.Add(folder);
 
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("Copy service name", null, (_, _) => { try { Clipboard.SetText(svc.Name); } catch { } });
+            menu.Items.Add("Copy short name", null, (_, _) => { try { Clipboard.SetText(svc.Name); } catch { } });
+            menu.Items.Add("Copy display name", null, (_, _) =>
+            {
+                string name = svc.DisplayName.Length > 0 ? svc.DisplayName : svc.Name;
+                try { Clipboard.SetText(name); } catch { }
+            });
+            string copyPath = svc.ExePath.Length > 0 ? svc.ExePath : svc.PathRaw;
+            var copyPathItem = new ToolStripMenuItem("Copy path", null, (_, _) => { try { Clipboard.SetText(copyPath); } catch { } })
+            { Enabled = copyPath.Length > 0 };
+            menu.Items.Add(copyPathItem);
             menu.Show(Cursor.Position);
         }
 

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="B4Browse" Language="1033" Version="{VERSION}"
+           Manufacturer="LanDen Labs" UpgradeCode="{d3f8c2d6-0000-4000-8000-000000000001}">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of B4Browse is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="B4Browse" />
+      </Directory>
+    </Directory>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="cmpExe" Guid="{d3f8c2d6-0000-4000-8000-000000000002}">
+        <File Id="filExe" Source="{EXEDIR}\B4Browse.exe" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    <Feature Id="DefaultFeature" Level="1">
+      <ComponentRef Id="cmpExe" />
+    </Feature>
+  </Product>
+</Wix>

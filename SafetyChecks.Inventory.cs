@@ -508,6 +508,18 @@ namespace B4Browse
                             if (accepts.HasValue) s.IgnoresShutdown = !accepts.Value;
                         }
                         catch { /* ignore */ }
+
+                        try
+                        {
+                            using var regKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                                $@"SYSTEM\CurrentControlSet\Services\{s.Name}");
+                            if (regKey != null)
+                            {
+                                var flag = regKey.GetValue("DeleteFlag");
+                                s.IsPendingDelete = flag is int v && v != 0;
+                            }
+                        }
+                        catch { /* ignore */ }
                         // UI grid will refresh via ServiceFileInspector.InspectionCompleted subscription.
                     });
                 }

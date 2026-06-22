@@ -22,6 +22,7 @@ namespace B4Browse
         public DateTime? TransitionSince = null; // approximate time when a transition was observed
         public bool IsStuck = false;        // observed stuck state (to be set by background poller)
         public bool IgnoresShutdown = false; // SERVICE_ACCEPT_SHUTDOWN not accepted
+        public bool IsPendingDelete = false; // registry DeleteFlag set — service marked for deletion
         public string Sha256 = "";         // file hash (computed by background inspector)
         public string SignatureStatus = ""; // authenticode/signature status
 

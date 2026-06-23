@@ -289,6 +289,18 @@ namespace B4Browse
                 Eval = c => c.IsGlobal ? None("—") : None(OnOff(c.Prefs!.Bool(path))),
             };
 
+            // Like Toggle, but flags the setting as Caution when it is enabled (true = risky on shared machines).
+            SettingDef RiskToggle(string cat, int order, string label, string path, string link) => new()
+            {
+                Category = cat, Order = order, Label = label, Link = link,
+                Eval = c =>
+                {
+                    if (c.IsGlobal) return None("—");
+                    bool? b = c.Prefs!.Bool(path);
+                    return (OnOff(b), b == true ? TabSeverity.Caution : TabSeverity.None);
+                },
+            };
+
             // Helper for a default content-setting permission; "allow" is flagged when risky.
             // Each permission's page lives under chrome://settings/content/<key>.
             SettingDef Perm(int order, string label, string key, bool allowRisky, string contentPath) => new()
@@ -357,7 +369,7 @@ namespace B4Browse
                     Link = "chrome://password-manager/passwords", Eval = c =>
                     c.IsGlobal ? None("—") : None(c.PwCount?.ToString() ?? "—") },
                 Toggle(PW, 4, "Autofill addresses", "autofill.profile_enabled", "chrome://settings/addresses"),
-                Toggle(PW, 5, "Autofill payment methods", "autofill.credit_card_enabled", "chrome://settings/payments"),
+                RiskToggle(PW, 5, "Autofill payment methods", "autofill.credit_card_enabled", "chrome://settings/payments"),
 
                 // ---- Site permission defaults ---------------------------- //
                 Perm(1, "Notifications", "notifications", allowRisky: true, "notifications"),

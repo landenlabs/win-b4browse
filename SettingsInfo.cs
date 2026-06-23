@@ -79,8 +79,10 @@ namespace B4Browse
                 "Whether Chrome offers to fill saved names, postal addresses, and phone numbers into web " +
                 "forms. A privacy convenience with no direct security impact."),
             new("Passwords & Autofill", "Autofill payment methods",
-                "Whether Chrome offers to fill saved credit/debit card details into checkout forms. On " +
-                "shared machines, off is safer; the card data is tied to your Windows sign-in."),
+                "Whether Chrome offers to fill saved credit/debit card details into checkout forms. " +
+                "\"On\" is flagged here as a caution: anyone with access to your Windows sign-in session " +
+                "can trigger autofill and submit your card details to any site. \"Off\" prevents Chrome " +
+                "from filling payment forms automatically and is the safer choice, especially on shared machines."),
 
             // ---- Site permission defaults -------------------------------- //
             new("Site permission defaults", "Notifications",

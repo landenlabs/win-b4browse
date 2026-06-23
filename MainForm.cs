@@ -48,6 +48,7 @@ namespace B4Browse
         private Label _adminIcon = null!;     // Segoe MDL2 shield glyph
         private Label _adminStatus = null!;   // "Administrator" / "Standard user"
         private Label _netStatus = null!;
+        private CheckBox _autoLoadCheck = null!; // toggles AppSettings.AutoLoad
 
         // "Needs elevation" affordances: a left-panel call-out (caption + Run-as-Admin button)
         // shown when unelevated, plus the bottom indicator above. When the active section needs
@@ -375,7 +376,21 @@ namespace B4Browse
             _tips.SetToolTip(_netStatus, "Open Windows network / airplane-mode settings");
             _statusBar.Controls.Add(_netStatus);
 
-            // Font-scale control: caption + [ - 100% + ], right-aligned via LayoutStatusBar.
+            // Auto-load toggle: left of the font-scale group.
+            _autoLoadCheck = new CheckBox
+            {
+                Text = "Auto-load",
+                AutoSize = true,
+                Checked = AppSettings.AutoLoad,
+                Top = 7,
+                Font = new Font("Segoe UI", 9f),
+                ForeColor = Theme.Subtle,
+            };
+            _autoLoadCheck.CheckedChanged += (_, _) => AppSettings.AutoLoad = _autoLoadCheck.Checked;
+            _tips.SetToolTip(_autoLoadCheck, "When checked, each panel runs its checks automatically on first open");
+            _statusBar.Controls.Add(_autoLoadCheck);
+
+            // Font-scale control: caption + [ - 100% + ], right-aligned via LayoutStatusBar.  Auto-load sits immediately left of it.
             _scaleCaption = new Label
             {
                 Text = "Font size", AutoSize = true, Top = 7, ForeColor = Theme.Subtle,
@@ -462,6 +477,8 @@ namespace B4Browse
             _scaleMinus.Left = _scaleLabel.Left - _scaleMinus.Width - 2;
             _scaleCaption.Left = _scaleMinus.Left - _scaleCaption.Width - 10;
             _scaleCaption.Top = (h - _scaleCaption.Height) / 2;
+            _autoLoadCheck.Left = _scaleCaption.Left - _autoLoadCheck.Width - 16;
+            _autoLoadCheck.Top = (h - _autoLoadCheck.Height) / 2;
 
             // Left cluster: [shield] [Administrator | Standard user]   gap   [● Network ...]
             int x = 12;
@@ -706,7 +723,7 @@ namespace B4Browse
             ApplyAdminAffordanceState(needs);
             if (needs && !_adminFlashShown) { _adminFlashShown = true; StartAdminFlash(); }
 
-            if (IsHandleCreated && view is ITabView t && !t.HasRun) _ = t.RunAsync();
+            if (AppSettings.AutoLoad && IsHandleCreated && view is ITabView t && !t.HasRun) _ = t.RunAsync();
             UpdateBanner();
             _nav.Invalidate();
         }
@@ -838,7 +855,7 @@ namespace B4Browse
         {
             base.OnShown(e);
             Theme.ApplyScrollbarTheme(this);   // initial native-scrollbar theme (handles now exist)
-            _ = _scanView.RunAsync(); // auto-run the initial tab
+            if (AppSettings.AutoLoad) _ = _scanView.RunAsync(); // auto-run the initial tab
             LoadPatchDate();          // fill the toolbar "Patched:" readout off the UI thread
         }
 

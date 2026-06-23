@@ -2,8 +2,8 @@
 <table border="0">
   <tr>
     <td>
-      <!-- VERSION -->v6.06.19<br>
-      <!-- DATE -->22-Jun-2026<br>
+      <!-- VERSION -->v6.06.20<br>
+      <!-- DATE -->23-Jun-2026<br>
       Windows<br>
       <a href="https://landenlabs.com/index.html">Home</a>
     </td>

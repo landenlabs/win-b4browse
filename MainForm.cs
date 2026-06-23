@@ -857,6 +857,19 @@ namespace B4Browse
             Theme.ApplyScrollbarTheme(this);   // initial native-scrollbar theme (handles now exist)
             if (AppSettings.AutoLoad) _ = _scanView.RunAsync(); // auto-run the initial tab
             LoadPatchDate();          // fill the toolbar "Patched:" readout off the UI thread
+            _ = System.Threading.Tasks.Task.Run(CollectHistorySnapshot); // background history snapshot
+        }
+
+        /// <summary>Collects a system-count snapshot on a background thread and saves it to the
+        /// history file. Called once per launch; same-day entries are replaced by the store.</summary>
+        private static void CollectHistorySnapshot()
+        {
+            try
+            {
+                var snap = SafetyChecks.CollectSnapshot();
+                HistoryStore.Save(snap);
+            }
+            catch { /* non-fatal — history is best-effort */ }
         }
 
         /// <summary>Reads the most-recent Windows patch date on a background thread (WMI) and shows it

@@ -2716,6 +2716,109 @@ namespace B4Browse
             menu.Show(Cursor.Position);
         }
 
+        // ---- History --------------------------------------------------------- //
+        public static Control BuildHistory()
+        {
+            var cols = new[]
+            {
+                new GridColumn { Header = "Date / time", Width = 130,
+                    Text = o => ((HistorySnapshot)o).Timestamp.ToString("yyyy-MM-dd HH:mm"),
+                    Sort = o => ((HistorySnapshot)o).Timestamp },
+
+                // AppData
+                new GridColumn { Header = "AD Local", Width = 68,
+                    Text = o => FmtCount(((HistorySnapshot)o).AppDataLocal),
+                    Sort = o => ((HistorySnapshot)o).AppDataLocal,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaAppDataLocal) },
+                new GridColumn { Header = "AD Roaming", Width = 78,
+                    Text = o => FmtCount(((HistorySnapshot)o).AppDataRoaming),
+                    Sort = o => ((HistorySnapshot)o).AppDataRoaming,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaAppDataRoaming) },
+                new GridColumn { Header = "AD Low", Width = 60,
+                    Text = o => FmtCount(((HistorySnapshot)o).AppDataLocalLow),
+                    Sort = o => ((HistorySnapshot)o).AppDataLocalLow,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaAppDataLocalLow) },
+
+                // System counts
+                new GridColumn { Header = "Services", Width = 66,
+                    Text = o => FmtCount(((HistorySnapshot)o).ServicesEnabled),
+                    Sort = o => ((HistorySnapshot)o).ServicesEnabled,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaServicesEnabled) },
+                new GridColumn { Header = "Installed", Width = 66,
+                    Text = o => FmtCount(((HistorySnapshot)o).AppsInstalled),
+                    Sort = o => ((HistorySnapshot)o).AppsInstalled,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaAppsInstalled) },
+                new GridColumn { Header = "Startup", Width = 60,
+                    Text = o => FmtCount(((HistorySnapshot)o).StartupEnabled),
+                    Sort = o => ((HistorySnapshot)o).StartupEnabled,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaStartupEnabled) },
+                new GridColumn { Header = "Root CAs", Width = 68,
+                    Text = o => FmtCount(((HistorySnapshot)o).RootCerts),
+                    Sort = o => ((HistorySnapshot)o).RootCerts,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaRootCerts) },
+                new GridColumn { Header = "Scheduled", Width = 70,
+                    Text = o => FmtCount(((HistorySnapshot)o).ScheduledTasks),
+                    Sort = o => ((HistorySnapshot)o).ScheduledTasks,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaScheduledTasks) },
+                new GridColumn { Header = "Shell Ext", Width = 66,
+                    Text = o => FmtCount(((HistorySnapshot)o).ShellExtensions),
+                    Sort = o => ((HistorySnapshot)o).ShellExtensions,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaShellExtensions) },
+                new GridColumn { Header = "Chrome Ext", Width = 76,
+                    Text = o => FmtCount(((HistorySnapshot)o).ChromeExtensions),
+                    Sort = o => ((HistorySnapshot)o).ChromeExtensions,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaChromeExtensions) },
+                new GridColumn { Header = "Users", Width = 52,
+                    Text = o => FmtCount(((HistorySnapshot)o).UserAccounts),
+                    Sort = o => ((HistorySnapshot)o).UserAccounts,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaUserAccounts) },
+                new GridColumn { Header = "Restores", Width = 66,
+                    Text = o => FmtCount(((HistorySnapshot)o).RestorePoints),
+                    Sort = o => ((HistorySnapshot)o).RestorePoints,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaRestorePoints) },
+                new GridColumn { Header = "Devices", Width = 60,
+                    Text = o => FmtCount(((HistorySnapshot)o).Devices),
+                    Sort = o => ((HistorySnapshot)o).Devices,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaDevices) },
+                new GridColumn { Header = "Firewall", Width = 62,
+                    Text = o => FmtCount(((HistorySnapshot)o).FirewallRules),
+                    Sort = o => ((HistorySnapshot)o).FirewallRules,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaFirewallRules) },
+            };
+
+            return new SortableGrid("Refresh",
+                () => HistoryStore.LoadWithDeltas().Cast<object>().ToList(),
+                cols, defaultSortColumn: 0, defaultAscending: false,   // newest first
+                help: TabHelp.History,
+                extraButtons: new (string, Action)[]
+                {
+                    ("Open history folder", () =>
+                    {
+                        try
+                        {
+                            string path = HistoryStore.FilePath;
+                            string arg = File.Exists(path)
+                                ? $"/select,\"{path}\""
+                                : $"\"{Path.GetDirectoryName(path)}\"";
+                            Process.Start(new ProcessStartInfo("explorer.exe", arg) { UseShellExecute = true });
+                        }
+                        catch { }
+                    }),
+                },
+                riskRow: _ => false,
+                severity: _ => TabSeverity.None);
+        }
+
+        private static string FmtCount(int v) => v < 0 ? "—" : v.ToString();
+
+        private static (Color Back, Color Fore)? DeltaStyle(int delta)
+        {
+            if (delta == int.MinValue || delta == 0) return null;
+            if (delta > 0) return (YelBack, YelFore);   // count increased
+            return (Color.FromArgb(220, 235, 255),       // count decreased — subtle blue
+                    Color.FromArgb(0, 60, 140));
+        }
+
         // ---- AppData --------------------------------------------------------- //
         public static Control BuildAppData()
         {

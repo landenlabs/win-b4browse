@@ -918,6 +918,50 @@ namespace B4Browse
             "lusrmgr.msc is not present on Windows Home editions - use netplwiz there.\n" +
             "\n" + Common);
 
+        public static readonly HelpInfo History = new("Run History",
+            "# What this shows\n" +
+            "A table of system counts captured each time B4-Browse runs. Each row is one snapshot; " +
+            "the newest is at the top. If the app runs more than once on the same day the earlier " +
+            "reading for that day is replaced, so you get at most one row per day.\n" +
+            "\n" +
+            "Up to 100 snapshots are kept. The data is stored in:\n" +
+            "    %LOCALAPPDATA%\\B4Browse\\history.json\n" +
+            "\n" +
+            "# Columns\n" +
+            "- Date/time   - when the snapshot was taken.\n" +
+            "- AD Local    - folders in %LOCALAPPDATA%.\n" +
+            "- AD Roaming  - folders in %APPDATA% (Roaming).\n" +
+            "- AD Low      - folders in LocalLow.\n" +
+            "- Services    - non-disabled Windows services.\n" +
+            "- Installed   - programs in the Add/Remove registry keys.\n" +
+            "- Startup     - enabled startup entries (Run keys + startup folders).\n" +
+            "- Root CAs    - trusted root certificates in the machine store.\n" +
+            "- Scheduled   - registered scheduled tasks.\n" +
+            "- Shell Ext   - entries in the Approved shell-extensions registry key.\n" +
+            "- Chrome Ext  - Chrome extensions across all profiles.\n" +
+            "- Users       - local user profiles (S-1-5-21-* SIDs in ProfileList).\n" +
+            "- Restores    - VSS shadow copies (restore points).\n" +
+            "- Devices     - PnP signed device drivers (WMI; may be slow).\n" +
+            "- Firewall    - firewall rules in the registry.\n" +
+            "\n" +
+            "# Trend colours\n" +
+            "A cell is highlighted when its count changed from the previous snapshot:\n" +
+            "- Yellow - count increased (something was added).\n" +
+            "- Blue   - count decreased (something was removed).\n" +
+            "The first row has no previous snapshot to compare against, so it is never coloured.\n" +
+            "\n" +
+            "# What to look for\n" +
+            "- A sudden jump in Installed, Startup, Scheduled, Shell Ext, or Firewall between two " +
+            "snapshots you did not expect is worth investigating on the corresponding tab.\n" +
+            "- A drop in Restores is a red flag — legitimate software rarely deletes restore points.\n" +
+            "- A new Users entry (count up by 1) may indicate an account was created without your knowledge.\n" +
+            "\n" +
+            "# Note\n" +
+            "Counts are lightweight readings optimised for speed, so they may differ slightly from the " +
+            "full grid tabs (which apply additional filtering). Their purpose is consistent trend tracking, " +
+            "not an exact match to the tab totals. A '—' means the count could not be read on that run.\n" +
+            "\n" + Common);
+
         public static readonly HelpInfo AppData = new("AppData Folders",
             "# What this shows\n" +
             "The immediate sub-folders of the three AppData roots on this machine:\n" +

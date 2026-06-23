@@ -41,7 +41,7 @@ namespace B4Browse
         /// <summary>Category display order for the tree navigation.</summary>
         public static readonly string[] Categories =
         {
-            "Network path", "Recent changes", "Accounts & usage", "Protection", "Browser", "Tools",
+            "Network path", "Recent changes", "Accounts & usage", "Protection", "Browser", "Extras",
         };
 
         /// <summary>The Safety Scan's labelled steps - shared by the GUI ResultsView and the
@@ -153,10 +153,13 @@ namespace B4Browse
                     Producers = new Func<CheckGroup>[] { SafetyChecks.CheckChromeSettings }, BuildView = TabViews.BuildSettings },
 
             // -- Tools (GUI-only: no headless producers) --
-            new() { Category = "Tools", Title = "Links", Key = "links",
+            new() { Category = "Extras", Title = "Links", Key = "links",
                     Banner = "Tools & links", BuildView = TabViews.BuildLinks },
-            new() { Category = "Tools", Title = "Windows Security", Key = "security",
+            new() { Category = "Extras", Title = "Windows Security", Key = "security",
                     Banner = "Windows Security shortcuts", BuildView = TabViews.BuildSecurityLinks },
+            new() { Category = "Extras", Title = "History", Key = "history",
+                    Banner = "Run-to-run system count trends", ReportTitle = "History",
+                    Producers = new Func<CheckGroup>[] { SafetyChecks.CheckHistory }, BuildView = TabViews.BuildHistory },
         };
 
         /// <summary>Lookup by scope key (case-insensitive).</summary>

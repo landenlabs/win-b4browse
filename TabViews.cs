@@ -2716,6 +2716,96 @@ namespace B4Browse
             menu.Show(Cursor.Position);
         }
 
+        // ---- AppData --------------------------------------------------------- //
+        public static Control BuildAppData()
+        {
+            SortableGrid grid = null!;
+            var cols = new[]
+            {
+                new GridColumn { Header = "Status", Width = 80,
+                    Text = o => AppDataStatusLabel((AppDataFolder)o),
+                    Sort = o => AppDataStatusSort((AppDataFolder)o),
+                    Style = o => AppDataStyle((AppDataFolder)o) },
+                new GridColumn { Header = "Created", Width = 95,
+                    Text = o => ((AppDataFolder)o).CreatedText,
+                    Sort = o => ((AppDataFolder)o).Created ?? DateTime.MinValue },
+                new GridColumn { Header = "Root", Width = 76,
+                    Text = o => ((AppDataFolder)o).Root,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Folder", Fill = 150,
+                    Text = o => ((AppDataFolder)o).FolderName,
+                    FilterKind = ColumnFilterKind.Regex },
+                new GridColumn { Header = "Known", Width = 62,
+                    Text = o => ((AppDataFolder)o).IsKnown ? "Yes" : "No",
+                    Sort = o => ((AppDataFolder)o).IsKnown ? 1 : 0,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Matched program", Fill = 160,
+                    Text = o => ((AppDataFolder)o).MatchedProgram,
+                    FilterKind = ColumnFilterKind.Regex },
+                new GridColumn { Header = "Path", Fill = 200,
+                    Text = o => ((AppDataFolder)o).FolderPath,
+                    FilterKind = ColumnFilterKind.Regex },
+            };
+            grid = new SortableGrid("Refresh",
+                () => SafetyChecks.GetAppDataFolders().Cast<object>().ToList(),
+                cols, defaultSortColumn: 1, defaultAscending: false,
+                help: TabHelp.AppData,
+                riskRow: o => o is AppDataFolder f && f.Risk >= TabSeverity.Caution,
+                severity: items =>
+                {
+                    var s = TabSeverity.None;
+                    foreach (var o in items)
+                        if (o is AppDataFolder f) s = Sev.Max(s, f.Risk);
+                    return s;
+                },
+                showAllToggle: ("All",
+                    "Off: show only folders created in the last 30 days.  On: show every AppData sub-folder.",
+                    o => ((AppDataFolder)o).DaysOld is null or > 30),
+                onRowContext: o => ShowAppDataMenu(grid, (AppDataFolder)o));
+            return grid;
+        }
+
+        private static string AppDataStatusLabel(AppDataFolder f)
+        {
+            if (f.DaysOld is < 7)  return "Recent";
+            if (f.DaysOld is < 30) return "Month";
+            if (f.DaysOld.HasValue) return "Old";
+            return "—";
+        }
+
+        private static int AppDataStatusSort(AppDataFolder f)
+        {
+            // Unknown+recent sorts highest; then age descending; known = lower priority
+            int age = f.DaysOld ?? int.MaxValue;
+            int known = f.IsKnown ? 1000000 : 0;
+            return known + age;
+        }
+
+        private static (Color Back, Color Fore)? AppDataStyle(AppDataFolder f)
+        {
+            if (!f.IsKnown && f.DaysOld is < 7)  return (RedBack, RedFore);
+            if (!f.IsKnown && f.DaysOld is < 30) return (YelBack, YelFore);
+            return null;
+        }
+
+        private static void ShowAppDataMenu(Control owner, AppDataFolder f)
+        {
+            var menu = new ContextMenuStrip();
+            menu.Items.Add("Open folder in Explorer", null, (_, _) =>
+            {
+                try { Process.Start(new ProcessStartInfo("explorer.exe", $"\"{f.FolderPath}\"") { UseShellExecute = true }); }
+                catch { }
+            }).Enabled = Directory.Exists(f.FolderPath);
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Copy folder path", null, (_, _) => { try { Clipboard.SetText(f.FolderPath); } catch { } });
+            menu.Items.Add("Copy folder name", null, (_, _) => { try { Clipboard.SetText(f.FolderName); } catch { } });
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Search the web for this folder name", null, (_, _) =>
+                OpenBrowser("https://www.google.com/search?q=" +
+                    System.Web.HttpUtility.UrlEncode($"AppData folder \"{f.FolderName}\" what is it")));
+            menu.Show(Cursor.Position);
+        }
+
         // ---- Shared helpers ---------------------------------------------- //
         private static TabSeverity WorstDays(System.Collections.Generic.IReadOnlyList<object> items, Func<object, int?> days)
         {

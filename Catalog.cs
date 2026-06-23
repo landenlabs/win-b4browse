@@ -112,6 +112,9 @@ namespace B4Browse
             new() { Category = "Recent changes", Title = "Win Extn", Key = "winext",
                     Banner = "File Explorer shell extensions", ReportTitle = "Shell Extensions",
                     Producers = new Func<CheckGroup>[] { SafetyChecks.CheckWinExt }, BuildView = TabViews.BuildWinExt },
+            new() { Category = "Recent changes", Title = "AppData", Key = "appdata",
+                    Banner = "AppData folder audit (Local / Roaming / LocalLow)", ReportTitle = "AppData Folders",
+                    Producers = new Func<CheckGroup>[] { SafetyChecks.CheckAppData }, BuildView = TabViews.BuildAppData },
 
             // -- Accounts & usage --
             new() { Category = "Accounts & usage", Title = "Users", Key = "users",

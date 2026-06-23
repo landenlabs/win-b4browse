@@ -918,6 +918,53 @@ namespace B4Browse
             "lusrmgr.msc is not present on Windows Home editions - use netplwiz there.\n" +
             "\n" + Common);
 
+        public static readonly HelpInfo AppData = new("AppData Folders",
+            "# What this shows\n" +
+            "The immediate sub-folders of the three AppData roots on this machine:\n" +
+            "- Local      (%LOCALAPPDATA%)     — per-user, machine-specific app data\n" +
+            "- Roaming    (%APPDATA%)           — per-user, syncs across machines when roaming profiles are used\n" +
+            "- LocalLow   (%LOCALAPPDATA%\\..\\LocalLow) — low-integrity sandbox data (browsers, etc.)\n" +
+            "\n" +
+            "Only the top level (one folder deep) is scanned. The default view shows folders created in the " +
+            "last 30 days; use the All toggle to see every folder.\n" +
+            "\n" +
+            "# Why this matters\n" +
+            "AppData is writable by any process running as the current user — no elevation needed. It is therefore " +
+            "a primary persistence location for malware, PUPs, browser hijackers, and rogue updaters. A folder " +
+            "dropped here without a corresponding installer entry is the signal worth reviewing, especially when " +
+            "it appeared recently.\n" +
+            "\n" +
+            "# Columns\n" +
+            "- Status   - recency tint (Recent = last 7 days, Month = last 30 days) combined with the Known flag.\n" +
+            "- Created  - file-system creation timestamp of the folder.\n" +
+            "- Root     - which AppData tree the folder is in (Local / Roaming / LocalLow).\n" +
+            "- Folder   - the folder name.\n" +
+            "- Known    - Yes when the folder matches an entry in the Installed programs list or is a well-known " +
+            "Windows/runtime name; No otherwise.\n" +
+            "- Matched program - the installer display name that best matches this folder, when Known = Yes.\n" +
+            "- Path     - full path to the folder.\n" +
+            "\n" +
+            "# Status colours\n" +
+            Recency +
+            "Unknown folders (Known = No) created within the last 30 days are highlighted yellow as Caution.\n" +
+            "\n" +
+            "# What to look for\n" +
+            "- A Caution row (yellow, Known = No, recent) — cross-check the folder name against your own " +
+            "installs; if you do not recognise it, inspect the contents.\n" +
+            "- A very recently created folder (red / last 7 days) with no installer match is the highest-priority signal.\n" +
+            "- A Known = No folder that is old (> 30 days) may be a leftover from an uninstalled program " +
+            "that didn't clean up after itself — lower priority but worth noting.\n" +
+            "\n" +
+            "# Limitations\n" +
+            "The 'Known' cross-reference matches folder names against installer display names heuristically " +
+            "(full name, first word, install-location segment). It will miss some legitimate programs " +
+            "whose folder name bears no resemblance to the installer name, and may occasionally match " +
+            "incorrectly on short or generic names. Use it as a triage signal, not a verdict.\n" +
+            "\n" +
+            "# Special actions\n" +
+            "- Right-click a row to open the folder in Explorer, copy the path, or search the web for the folder name.\n" +
+            "\n" + Common);
+
         public static readonly HelpInfo Links = new("Tools & Links",
             "# What this shows\n" +
             "A page of curated links to security tools and references (Chrome Safety Check, Windows Security, " +

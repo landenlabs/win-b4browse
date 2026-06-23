@@ -153,7 +153,12 @@ namespace B4Browse
                         return null;
                     } },
                 new GridColumn { Header = "Name", Width = 170, Text = o => ((EnvVariableInfo)o).Name },
-                new GridColumn { Header = "Scope", Width = 80, Text = o => ((EnvVariableInfo)o).IsMachineScope ? "Machine" : "User" },
+                new GridColumn { Header = "Scope", Width = 80, Text = o => ((EnvVariableInfo)o).IsMachineScope ? "Machine" : "User",
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Effective", Width = 80,
+                    Text = o => ((EnvVariableInfo)o).IsShadowed ? "No (User wins)" : "Yes",
+                    Sort = o => ((EnvVariableInfo)o).IsShadowed ? 0 : 1,
+                    FilterKind = ColumnFilterKind.Dropdown },
                 new GridColumn { Header = "Value", Width = 340, Text = o => ((EnvVariableInfo)o).Value, FilterKind = ColumnFilterKind.Regex },
                 new GridColumn { Header = "Invalid", Width = 70, Text = o => ((EnvVariableInfo)o).HasInvalidPaths ? "Yes" : "" },
                 new GridColumn { Header = "User-writable", Width = 110, Text = o => ((EnvVariableInfo)o).HasUserWritablePaths ? "Yes" : "" },
@@ -169,7 +174,8 @@ namespace B4Browse
                 extraButtons: new (string, Action)[] { ("Manage env", () => OpenEnvironmentVariables(grid)) },
                 help: TabHelp.EnvList,
                 riskRow: o => o is EnvVariableInfo e && (e.HasInvalidPaths || e.HasUserWritablePaths || e.IsCoreVariableAltered),
-                onRowContext: o => ShowEnvMenu(grid, (EnvVariableInfo)o));
+                onRowContext: o => ShowEnvMenu(grid, (EnvVariableInfo)o),
+                dimRow: o => o is EnvVariableInfo e && e.IsShadowed);
 
             return grid;
         }

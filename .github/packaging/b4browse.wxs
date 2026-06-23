@@ -5,18 +5,38 @@
     <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of B4Browse is already installed." />
     <MediaTemplate EmbedCab="yes" />
+
     <Directory Id="TARGETDIR" Name="SourceDir">
       <Directory Id="ProgramFilesFolder">
         <Directory Id="INSTALLFOLDER" Name="B4Browse" />
       </Directory>
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="AppMenuFolder" Name="B4Browse" />
+      </Directory>
+      <Directory Id="DesktopFolder" />
     </Directory>
+
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="cmpExe" Guid="{d3f8c2d6-0000-4000-8000-000000000002}">
         <File Id="filExe" Source="{EXEDIR}\B4Browse.exe" KeyPath="yes" />
       </Component>
     </DirectoryRef>
+
+    <DirectoryRef Id="AppMenuFolder">
+      <Component Id="cmpStartMenu" Guid="{d3f8c2d6-0000-4000-8000-000000000003}">
+        <Shortcut Id="StartMenuShortcut" Name="B4Browse"
+                  Description="B4-Browse - Chrome Safety Check by LanDen Labs"
+                  Target="[INSTALLFOLDER]B4Browse.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveAppMenuFolder" Directory="AppMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\LanDenLabs\B4Browse"
+                       Name="StartMenuInstalled" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
     <Feature Id="DefaultFeature" Level="1">
       <ComponentRef Id="cmpExe" />
+      <ComponentRef Id="cmpStartMenu" />
     </Feature>
   </Product>
 </Wix>

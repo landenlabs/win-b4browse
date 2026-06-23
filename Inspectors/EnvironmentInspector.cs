@@ -26,6 +26,19 @@ namespace B4Browse
             InspectScope(EnvironmentVariableTarget.Machine, true, list);
             InspectScope(EnvironmentVariableTarget.User, false, list);
 
+            // Mark shadowed: for any non-PATH variable that exists in both Machine and User scope,
+            // the Machine row loses (User overrides it) and is shown dimmed so the user sees which
+            // value actually wins.  PATH is additive (both contribute), so PATH rows are never shadowed.
+            var userNames = new HashSet<string>(
+                list.Where(e => !e.IsMachineScope).Select(e => e.Name),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var e in list)
+                if (e.IsMachineScope
+                    && !e.Name.Equals("PATH", StringComparison.OrdinalIgnoreCase)
+                    && userNames.Contains(e.Name))
+                    e.IsShadowed = true;
+
             return list;
         }
 

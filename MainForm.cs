@@ -723,7 +723,9 @@ namespace B4Browse
             ApplyAdminAffordanceState(needs);
             if (needs && !_adminFlashShown) { _adminFlashShown = true; StartAdminFlash(); }
 
-            if (AppSettings.AutoLoad && IsHandleCreated && view is ITabView t && !t.HasRun) _ = t.RunAsync();
+            // History always auto-loads (it just reads a local file); other panels respect AutoLoad.
+            bool alwaysLoad = sec.Key == "history";
+            if (IsHandleCreated && view is ITabView t && !t.HasRun && (AppSettings.AutoLoad || alwaysLoad)) _ = t.RunAsync();
             UpdateBanner();
             _nav.Invalidate();
         }
@@ -793,7 +795,7 @@ namespace B4Browse
                 isCategory = false;
                 sev = SevOf(section);
                 counts = CountsOf(section);
-                needsElevationDot = !Elevation.IsAdmin && section.NeedsAdmin;
+                needsElevationDot = section.NeedsAdmin;
             }
             else
             {

@@ -43,7 +43,15 @@ namespace B4Browse
             try { installed = GetInstalledPrograms(); }
             catch { installed = new List<InstalledProgram>(); }
 
-            var installedNames = BuildInstalledNameIndex(installed);
+            List<StartupItem> startupItems;
+            try { startupItems = GetStartup(); }
+            catch { startupItems = new List<StartupItem>(); }
+
+            List<ServiceInfo> services;
+            try { services = GetServices(); }
+            catch { services = new List<ServiceInfo>(); }
+
+            var installedNames = BuildInstalledNameIndex(installed, startupItems, services);
 
             var result = new List<AppDataFolder>();
             foreach (var (rootLabel, rootPath) in roots)
@@ -149,9 +157,13 @@ namespace B4Browse
 
         /// <summary>
         /// Index keyed by the <see cref="Normalize"/>d form of every token derived from
-        /// installed-program names and install locations. Value is the full display name.
+        /// installed-program names, install locations, startup entries, and service names.
+        /// Value is the full display name.
         /// </summary>
-        private static Dictionary<string, string> BuildInstalledNameIndex(List<InstalledProgram> installed)
+        private static Dictionary<string, string> BuildInstalledNameIndex(
+            List<InstalledProgram> installed,
+            List<StartupItem> startup,
+            List<ServiceInfo> services)
         {
             var index = new Dictionary<string, string>(StringComparer.Ordinal);
 
@@ -183,6 +195,44 @@ namespace B4Browse
                         if (seg.Length >= 3)
                             AddToken(index, Normalize(seg), p.Name);
                     }
+                }
+            }
+
+            // Startup entries: index by name and executable directory
+            foreach (var s in startup)
+            {
+                if (!string.IsNullOrEmpty(s.Name))
+                {
+                    AddToken(index, Normalize(s.Name), s.Name);
+                    string fw = s.Name.Split(' ', 2)[0];
+                    if (fw.Length >= 3) AddToken(index, Normalize(fw), s.Name);
+                }
+                if (!string.IsNullOrEmpty(s.Dir))
+                {
+                    string seg = Path.GetFileName(s.Dir.TrimEnd('\\', '/'));
+                    if (seg.Length >= 3) AddToken(index, Normalize(seg), s.Name);
+                }
+            }
+
+            // Services: index by service name, display name, and exe directory
+            foreach (var svc in services)
+            {
+                if (!string.IsNullOrEmpty(svc.Name))
+                {
+                    AddToken(index, Normalize(svc.Name), svc.DisplayName.Length > 0 ? svc.DisplayName : svc.Name);
+                    string fw = svc.Name.Split(' ', 2)[0];
+                    if (fw.Length >= 3) AddToken(index, Normalize(fw), svc.Name);
+                }
+                if (!string.IsNullOrEmpty(svc.DisplayName))
+                {
+                    AddToken(index, Normalize(svc.DisplayName), svc.DisplayName);
+                    string fw = svc.DisplayName.Split(' ', 2)[0];
+                    if (fw.Length >= 3) AddToken(index, Normalize(fw), svc.DisplayName);
+                }
+                if (!string.IsNullOrEmpty(svc.Dir))
+                {
+                    string seg = Path.GetFileName(svc.Dir.TrimEnd('\\', '/'));
+                    if (seg.Length >= 3) AddToken(index, Normalize(seg), svc.DisplayName.Length > 0 ? svc.DisplayName : svc.Name);
                 }
             }
 

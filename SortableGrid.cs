@@ -55,6 +55,7 @@ namespace B4Browse
         private readonly BusyOverlay _busy = new();
         private readonly Func<IReadOnlyList<object>, TabSeverity>? _severityEval;
         private readonly Func<object, bool>? _riskRow;   // per-row "warrants review" test for the nav count badge
+        private readonly Func<object, bool>? _dimRow;    // per-row "dim this row" — mutes text for shadowed/superseded rows
         private readonly Action<object>? _onRowContext;
         private readonly CheckBox? _toggle;
         private readonly Func<object, bool>? _hideWhenOff;
@@ -124,11 +125,13 @@ namespace B4Browse
             (string Label, Action OnClick)? headerButton = null,
             HelpInfo? help = null,
             int headerHeight = 104,
-            Func<object, bool>? riskRow = null)
+            Func<object, bool>? riskRow = null,
+            Func<object, bool>? dimRow = null)
         {
             _loader = loader;
             _cols = columns;
             _onButton = onButtonClick;
+            _dimRow = dimRow;
             _summary = summary;
             _headerInfo = headerInfo;
             _severityEval = severity;
@@ -279,6 +282,7 @@ namespace B4Browse
             _grid.ColumnHeaderMouseClick += OnHeaderClick;
             _grid.CellContentClick += OnCellClick;
             _grid.CellMouseDown += OnCellMouseDown;
+            _grid.Paint += OnGridPaint;
 
             Controls.Add(_grid);
             if (_headerInfo != null)
@@ -441,6 +445,7 @@ namespace B4Browse
 
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
+            _grid.Invalidate();   // clear the "Press Refresh" watermark while loading
 
             CenterBusy();
             _busy.Start();
@@ -506,6 +511,20 @@ namespace B4Browse
         {
             SetStatusText("Cancelling …");
             _cts?.Cancel();
+        }
+
+        /// <summary>Draws a centered "Press Refresh to load the table" hint over the empty grid
+        /// before the first load. Disappears once the grid has loaded (HasRun = true).</summary>
+        private void OnGridPaint(object? sender, PaintEventArgs e)
+        {
+            if (HasRun || _loading) return;
+            const string msg = "Press Refresh to load the table";
+            using var font = new Font("Segoe UI", 12f, FontStyle.Italic);
+            var sz = e.Graphics.MeasureString(msg, font);
+            float x = (_grid.ClientSize.Width - sz.Width) / 2f;
+            float y = (_grid.ClientSize.Height - sz.Height) / 2f;
+            using var brush = new SolidBrush(Theme.Subtle);
+            e.Graphics.DrawString(msg, font, brush, Math.Max(0f, x), Math.Max(0f, y));
         }
 
         private string SafeSummary()
@@ -860,6 +879,10 @@ namespace B4Browse
                 int idx = _grid.Rows.Add(values);
                 var row = _grid.Rows[idx];
                 row.Tag = item;
+                // Dim rows that are shadowed/superseded — muted text at the row level so any
+                // per-cell colour override (e.g. the Status column highlight) still takes precedence.
+                if (_dimRow != null && _dimRow(item))
+                    row.DefaultCellStyle.ForeColor = Theme.Subtle;
                 for (int i = 0; i < _cols.Length; i++)
                 {
                     var style = _cols[i].Style?.Invoke(item);

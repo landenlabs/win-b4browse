@@ -161,6 +161,12 @@ namespace B4Browse
             "proxy resolves for a real request. An unexpected proxy can silently route and read all your " +
             "traffic, so a manual proxy is flagged FAIL.\n" +
             "\n" +
+            "WPAD (Web Proxy Auto-Discovery) lets the OS auto-discover a proxy by broadcasting on the local " +
+            "network. On untrusted Wi-Fi an attacker can answer that broadcast and silently intercept all your " +
+            "traffic. Microsoft disabled WPAD by default in Windows 10 version 1709 for this reason. " +
+            "Keeping it OFF is the safer choice unless your organisation requires it.\n" +
+            "> Search: https://www.google.com/search?q=recommended+to+disable+windows+WPAD\n" +
+            "\n" +
             "## 9. Atomic Clock / Time Sync\n" +
             "Compares your PC clock against public NTP time servers. A large skew breaks TLS certificate " +
             "validation (HTTPS may fail or become easier to spoof) and can itself be a sign of tampering, so " +

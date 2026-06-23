@@ -24,5 +24,9 @@ namespace B4Browse
 
         // Optional inferred authors for the parsed paths (parallel to ParsedPaths when present)
         public List<string> InferredAuthors = new List<string>();
+
+        /// <summary>True when this Machine-scope row is overridden by a User-scope entry with the
+        /// same name. The variable's effective value comes from the User row instead.</summary>
+        public bool IsShadowed = false;
     }
 }

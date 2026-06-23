@@ -349,7 +349,8 @@ namespace B4Browse
                     bool autoDetect = (dcs[8] & 0x08) != 0;
                     group.Add(autoDetect ? CheckStatus.Warn : CheckStatus.Pass,
                         "Automatically detect settings (WPAD)",
-                        autoDetect ? "Enabled - proxy may be auto-discovered." : "Disabled.");
+                        autoDetect ? "Enabled - proxy may be auto-discovered." : "Disabled.")
+                        .WithLink("[ change in Windows Settings › Proxy ]", "ms-settings:network-proxy");
                 }
             }
             catch { /* best-effort */ }

@@ -613,7 +613,16 @@ $r | ConvertTo-Json -Compress -Depth 5
             ("Google",     "8.8.8.8"),
         };
 
-        public static CheckGroup CheckCrossResolver()
+        public static CheckGroup CheckCrossResolver() => CheckCrossResolver(null);
+
+        /// <summary>
+        /// Cross-resolver DNS comparison. <paramref name="extraDomain"/> optionally adds one
+        /// user-supplied domain to the fixed <see cref="TestHosts"/> set for this run only - used
+        /// by the "Check my domain" link in the Safety Scan view. Must look like a real DNS name
+        /// (<see cref="Uri.CheckHostName"/>) or it is silently ignored rather than sent to the
+        /// PowerShell probe.
+        /// </summary>
+        public static CheckGroup CheckCrossResolver(string? extraDomain)
         {
             if (!OutboundDnsReachable())
                 return SkippedDns("5. Cross-Resolver DNS Comparison", "the cross-resolver comparison");
@@ -622,10 +631,22 @@ $r | ConvertTo-Json -Compress -Depth 5
 
             bool wantV6 = IsIPv6Enabled();
 
+            string[] domains = TestHosts;
+            string? addedDomain = null;
+            if (!string.IsNullOrWhiteSpace(extraDomain))
+            {
+                string d = extraDomain.Trim().TrimEnd('.').ToLowerInvariant();
+                if (IsValidDomainInput(d) && !TestHosts.Contains(d, StringComparer.OrdinalIgnoreCase))
+                {
+                    domains = TestHosts.Append(d).ToArray();
+                    addedDomain = d;
+                }
+            }
+
             // Query the three public resolvers in parallel (one process each), each
             // resolving the whole domain set. Reuses Resolve-DnsName -Server (no NuGet).
             var tasks = ReferenceResolvers
-                .Select(s => Task.Run(() => (s.Ip, Data: QueryServerAll(s.Ip, wantV6))))
+                .Select(s => Task.Run(() => (s.Ip, Data: QueryServerAll(s.Ip, wantV6, domains))))
                 .ToArray();
             Task.WaitAll(tasks);
 
@@ -639,13 +660,17 @@ $r | ConvertTo-Json -Compress -Depth 5
                 "Valid = PASS when Local matches a reference; cdn = references disagree among themselves (CDN); " +
                 "geo = references agree but Local is a different, still-public edge (normal behind a CDN or corporate " +
                 "proxy); FAIL = Local returned a private/bogon address for a public site.");
+            if (addedDomain != null)
+                group.Add(CheckStatus.Info, "User domain added", $"{addedDomain} (checked alongside the fixed reference set).");
+            else if (!string.IsNullOrWhiteSpace(extraDomain))
+                group.Add(CheckStatus.Warn, "User domain ignored", $"\"{extraDomain}\" does not look like a valid domain name.");
 
             BuildComparisonTable(group, byServer, AddressFamily.InterNetwork,
-                "IPv4 (A records  -  prefix tiers /24, /16)", 24, 16);
+                "IPv4 (A records  -  prefix tiers /24, /16)", 24, 16, domains);
 
             if (wantV6)
                 BuildComparisonTable(group, byServer, AddressFamily.InterNetworkV6,
-                    "IPv6 (AAAA records  -  prefix tiers /64, /48)", 64, 48);
+                    "IPv6 (AAAA records  -  prefix tiers /64, /48)", 64, 48, domains);
             else
                 group.Add(CheckStatus.Info, "IPv6",
                     "No global IPv6 connectivity detected - IPv6 comparison skipped.");
@@ -653,10 +678,18 @@ $r | ConvertTo-Json -Compress -Depth 5
             return group;
         }
 
+        /// <summary>True if <paramref name="domain"/> parses as a plain DNS hostname - rejects
+        /// IP addresses, empty/whitespace, and anything with characters that would break out of
+        /// the quoted PowerShell literal built in <see cref="QueryServerAll"/>.</summary>
+        private static bool IsValidDomainInput(string domain) =>
+            !string.IsNullOrWhiteSpace(domain) &&
+            domain.Length <= 253 &&
+            Uri.CheckHostName(domain) == UriHostNameType.Dns;
+
         private static void BuildComparisonTable(
             CheckGroup group,
             Dictionary<string, Dictionary<string, (List<IPAddress> A, List<IPAddress> Aaaa)>> byServer,
-            AddressFamily family, string label, int bits1, int bits2)
+            AddressFamily family, string label, int bits1, int bits2, string[] domains)
         {
             string tier1 = "/" + bits1;
             string tier2 = "/" + bits2;
@@ -671,7 +704,7 @@ $r | ConvertTo-Json -Compress -Depth 5
             group.AddRow(CheckStatus.Info,
                 Row("-----", "------------------", "-------", "----------", "----------", "----------"));
 
-            foreach (var domain in TestHosts)
+            foreach (var domain in domains)
             {
                 List<IPAddress> local = LocalLookup(domain, family);
 
@@ -838,12 +871,12 @@ $r | ConvertTo-Json -Compress -Depth 5
 
         /// <summary>Resolves the whole domain set against one DNS server (A, and AAAA if requested).</summary>
         private static Dictionary<string, (List<IPAddress> A, List<IPAddress> Aaaa)> QueryServerAll(
-            string server, bool includeV6)
+            string server, bool includeV6, string[] domains)
         {
             var result = new Dictionary<string, (List<IPAddress>, List<IPAddress>)>();
-            foreach (var d in TestHosts) result[d] = (new List<IPAddress>(), new List<IPAddress>());
+            foreach (var d in domains) result[d] = (new List<IPAddress>(), new List<IPAddress>());
 
-            string domainList = string.Join(",", TestHosts.Select(d => $"'{d}'"));
+            string domainList = string.Join(",", domains.Select(d => $"'{d}'"));
             string aaaaBlock = includeV6
                 ? "  try{ $q=@(Resolve-DnsName -Server $s -Name $d -Type AAAA -DnsOnly -ErrorAction SilentlyContinue | " +
                   "Where-Object {$_.Type -eq 'AAAA'} | ForEach-Object {$_.IPAddress}) }catch{}\n"

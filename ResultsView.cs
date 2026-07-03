@@ -49,6 +49,7 @@ namespace B4Browse
         private bool _running;
         private bool _networkBlocked;
         private CancellationTokenSource? _cts;
+        private string _lastCheckedDomain = "";
 
         // Inline clickable links rendered into the output (section "open settings" actions,
         // the hosts-folder link, and the offline "open network settings" link). Each region
@@ -433,6 +434,62 @@ namespace B4Browse
                     Append("      ", ColorInfo);
                     AppendLink(label, () => OpenUri(uri));
                 }
+            }
+
+            // Cross-Resolver DNS Comparison: let the user add one domain of their own (e.g.
+            // their bank or webmail) to the fixed reference-host set, re-running just this
+            // section rather than the whole scan.
+            if (title.Contains("Cross-Resolver DNS", StringComparison.OrdinalIgnoreCase))
+            {
+                Append("      ", ColorInfo);
+                AppendLink("[ Check my domain ]", () => _ = PromptCheckDomainAsync());
+            }
+        }
+
+        /// <summary>Prompts for a domain, then re-runs the Cross-Resolver DNS Comparison group
+        /// with that domain added to the fixed reference set, replacing the section in place.</summary>
+        private async Task PromptCheckDomainAsync()
+        {
+            if (_running) return;   // a full scan is in progress - avoid racing it
+
+            using var dlg = new DomainInputDialog(
+                "Domain to check against the reference resolvers\r\n(e.g. your bank or webmail site):",
+                "Check my domain", _lastCheckedDomain);
+            if (dlg.ShowDialog(FindForm()) != DialogResult.OK) return;
+
+            string domain = dlg.Domain;
+            if (domain.Length == 0) return;
+            if (Uri.CheckHostName(domain) != UriHostNameType.Dns)
+            {
+                CopyableMessageBox.Show(this, $"\"{domain}\" doesn't look like a valid domain name.",
+                    "B4-Browse", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            _lastCheckedDomain = domain;
+
+            string prevStatus = _status.Text;
+            _running = true;
+            _runButton.Enabled = false;
+            _status.Text = $"Checking {domain} ...";
+            try
+            {
+                CheckGroup group = await Task.Run(() => SafetyChecks.CheckCrossResolver(domain));
+                int idx = _lastGroups.FindIndex(g =>
+                    g.Title.StartsWith("5. Cross-Resolver", StringComparison.OrdinalIgnoreCase));
+                if (idx >= 0) _lastGroups[idx] = group; else _lastGroups.Add(group);
+                ReRender();
+                _status.Text = $"Checked {domain} - {DateTime.Now:HH:mm:ss}";
+            }
+            catch (Exception ex)
+            {
+                CopyableMessageBox.Show(this, $"Domain check failed: {ex.Message}",
+                    "B4-Browse", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                _status.Text = prevStatus;
+            }
+            finally
+            {
+                _running = false;
+                _runButton.Enabled = true;
             }
         }
 

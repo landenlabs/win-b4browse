@@ -1,18 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest template. publish.yml substitutes the {TOKENS}:
+    {VERSION}                - csproj <Version> + ".0"  (MSIX needs 4 parts)
+    {IDENTITY_NAME}          - Partner Center > Product identity > Package/Identity/Name
+    {PUBLISHER}              - Partner Center > Product identity > Package/Identity/Publisher (CN=...)
+    {PUBLISHER_DISPLAY_NAME} - Partner Center > Product identity > Package/Properties/PublisherDisplayName
+  The three identity values come from repo Variables (Settings > Secrets and variables > Actions >
+  Variables: MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME). They MUST match what
+  Partner Center shows, or the Store upload is rejected.
+-->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   IgnorableNamespaces="uap rescap">
-  <Identity Name="LanDenLabs.B4Browse" Publisher="CN=LanDen Labs" Version="{VERSION}" ProcessorArchitecture="x64" />
+  <Identity Name="{IDENTITY_NAME}" Publisher="{PUBLISHER}" Version="{VERSION}" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>B4Browse</DisplayName>
-    <PublisherDisplayName>LanDen Labs</PublisherDisplayName>
+    <PublisherDisplayName>{PUBLISHER_DISPLAY_NAME}</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>Verifies network and OS are in a safe state before browsing.</Description>
   </Properties>
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.19041.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>
   <Resources>
     <Resource Language="en-us" />
@@ -23,8 +33,9 @@
         DisplayName="B4Browse"
         Square44x44Logo="Assets\Square44x44Logo.png"
         Square150x150Logo="Assets\Square150x150Logo.png"
+        BackgroundColor="transparent"
         Description="Verifies network and OS are in a safe state before browsing.">
-        <uap:DefaultTile ShortName="B4Browse" />
+        <uap:DefaultTile ShortName="B4Browse" Wide310x150Logo="Assets\Wide310x150Logo.png" />
       </uap:VisualElements>
     </Application>
   </Applications>

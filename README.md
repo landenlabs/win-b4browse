@@ -104,9 +104,19 @@ A built-in **Links** tab collects quick references — Chrome Safety Check, Wind
 
 ---
 
+## Download
+
+No install or .NET runtime needed. The exe is self-contained (Windows 10/11 x64).
+
+| Download | What it is |
+| --- | --- |
+| [B4Browse.exe](https://github.com/landenlabs/win-b4browse/releases/latest/download/B4Browse.exe) | Portable single-file exe: just run it |
+| [B4Browse-win-x64-portable.zip](https://github.com/landenlabs/win-b4browse/releases/latest/download/B4Browse-win-x64-portable.zip) | The same exe, zipped |
+| [All releases](https://github.com/landenlabs/win-b4browse/releases) | MSI installer and older versions |
+
 ## Usage
 
-- Requires **.NET 10** (`net10.0-windows`).
+- Building from source requires the **.NET 10 SDK** (`net10.0-windows`).
 - Build with Visual Studio or `dotnet build`, then run `B4Browse.exe`. The Safety Scan runs automatically on first show.
 - Use **Email this tab (Chrome)** to share a scan result.
 
@@ -143,7 +153,15 @@ dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=
 
 All runtime assets (icon, brand image, theme icon, links page) are embedded in the exe, so the single file is fully portable.
 
+### Releases and the Microsoft Store
+
+Pushing a `v*` tag runs `.github/workflows/publish.yml`, which attaches `B4Browse.exe`, the portable zip, an MSI and an MSIX to a GitHub release. The MSIX (`B4Browse-<ver>-x64.msix`) is built **unsigned**, for direct upload in Partner Center: the Store signs and hosts it, so no download URL is involved. Its identity comes from the repo Actions variables `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER` and `MSIX_PUBLISHER_DISPLAY_NAME`, which must match Partner Center > Product identity.
+
 ---
+
+## Privacy
+
+B4-Browse has no accounts, analytics or telemetry. The [privacy policy](https://landenlabs.github.io/win-b4browse/privacy.html) ([source](docs/privacy.md)) lists every network request the app makes.
 
 ## License
 

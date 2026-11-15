@@ -1,0 +1,6 @@
+# GitHub Pages (Jekyll) config for the docs/ site.
+# Enable it in: repo Settings > Pages > Build and deployment > Source: "Deploy from a branch",
+# Branch: main, Folder: /docs.
+title: B4-Browse
+description: Check that your network and Windows PC are safe before you browse.
+theme: jekyll-theme-minimal

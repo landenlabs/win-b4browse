@@ -34,12 +34,16 @@ namespace B4Browse
             string? exe = FindChrome();
             if (exe == null)
             {
-                group.Add(CheckStatus.Warn, "Chrome", "chrome.exe not found in standard install locations.");
+                group.Add(CheckStatus.Warn, "Chrome",
+                    "chrome.exe not found in standard install locations - use the 'Chrome path' button to choose it.");
                 return group;
             }
 
-
-            group.Add(CheckStatus.Info, "Path", exe);
+            if (ChromeInstalls.OverrideMissing)
+                group.Add(CheckStatus.Warn, "Chosen path missing",
+                    $"{ChromeInstalls.Override} no longer exists - showing the auto-detected install instead.");
+            bool custom = ChromeInstalls.Override != null && !ChromeInstalls.OverrideMissing;
+            group.Add(CheckStatus.Info, "Path", custom ? $"{exe}   (chosen)" : exe);
 
             string? installedVer = null;
             try
@@ -1221,19 +1225,10 @@ namespace B4Browse
         // ----------------------------------------------------------------- //
         // Helpers
         // ----------------------------------------------------------------- //
-        /// <summary>Path to chrome.exe in standard install locations, or null.</summary>
+        /// <summary>Path to the chrome.exe to inspect (user override, else auto-detected), or null.</summary>
         public static string? ChromeExePath() => FindChrome();
 
-        private static string? FindChrome()
-        {
-            string[] candidates =
-            {
-                Environment.ExpandEnvironmentVariables(@"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
-                Environment.ExpandEnvironmentVariables(@"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
-                Environment.ExpandEnvironmentVariables(@"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
-            };
-            return candidates.FirstOrDefault(File.Exists);
-        }
+        private static string? FindChrome() => ChromeInstalls.Resolve();
 
         private static IEnumerable<string> SafeDirs(string path)
         {

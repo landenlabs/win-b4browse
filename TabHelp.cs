@@ -424,6 +424,9 @@ namespace B4Browse
             "(Unsupported) extensions. It first backs up ALL extensions to " +
             "Downloads\\b4browse-extension-backup.zip; close Chrome first for a clean removal.\n" +
             "- Scan (header) - verify chrome.exe's signature or look it up on VirusTotal.\n" +
+            "- Chrome path… - with several browsers installed (Stable / Beta / Dev / Canary / " +
+            "Chromium), choose which chrome.exe the header inspects: pick a detected install, " +
+            "browse for any .exe, or return to Auto-detect. The choice is remembered.\n" +
             "- Right-click a row to open the extension's folder or copy its path.\n" +
             "\n" + Common);
 

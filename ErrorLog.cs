@@ -58,11 +58,13 @@ namespace B4Browse
         {
             try
             {
-                _entries.Enqueue(new ErrorEntry(
+                var entry = new ErrorEntry(
                     DateTime.Now, category,
                     string.IsNullOrWhiteSpace(source) ? "(unknown)" : source,
-                    message ?? "", detail));
+                    message ?? "", detail);
+                _entries.Enqueue(entry);
                 Interlocked.Increment(ref _count);
+                CrashLog.Mirror(entry);   // persist to disk so it survives a crash
 
                 // Trim the oldest entries past the cap.
                 while (Volatile.Read(ref _count) > MaxEntries && _entries.TryDequeue(out _))

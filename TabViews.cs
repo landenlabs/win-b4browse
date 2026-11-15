@@ -920,7 +920,11 @@ namespace B4Browse
             grid = new SortableGrid("Refresh",
                 () => SafetyChecks.GetChromeExtensions().Where(e => e.Enabled).Cast<object>().ToList(),
                 cols, defaultSortColumn: 2, defaultAscending: true,
-                extraButtons: new (string, Action)[] { (RemoveExtBtnLabel, () => RemoveUnsupportedExtensions(grid)) },
+                extraButtons: new (string, Action)[]
+                {
+                    (RemoveExtBtnLabel, () => RemoveUnsupportedExtensions(grid)),
+                    ("Chrome path…", () => ShowChromePathMenu(grid)),
+                },
                 help: TabHelp.Chrome,
                 riskRow: o => o is ChromeExtension x && (Sev.FromDays(x.DaysOld) >= TabSeverity.Caution || x.Unsupported),
                 headerInfo: SafetyChecks.CheckChromeHeader,
@@ -1084,6 +1088,57 @@ namespace B4Browse
         };
 
         private const string RemoveExtBtnLabel = "Remove unsupported";
+
+        /// <summary>"Chrome path…" button: pick which chrome.exe the header inspects (path, version,
+        /// hash, signature) when several are installed. Lists the detected installs (current one
+        /// checked), a file browser for anything else, and a reset to auto-detect. The choice is
+        /// persisted (<see cref="ChromeInstalls.Override"/>) and the tab reloads to show it.</summary>
+        private static void ShowChromePathMenu(SortableGrid grid)
+        {
+            var menu = new ContextMenuStrip();
+            string? current = ChromeInstalls.Resolve();
+            bool auto = ChromeInstalls.Override == null || ChromeInstalls.OverrideMissing;
+
+            void Choose(string? path)
+            {
+                ChromeInstalls.Override = path;
+                _ = grid.RunAsync();   // re-run the header so Path / Version / signature follow the choice
+            }
+
+            var installs = ChromeInstalls.Detect();
+            if (installs.Count == 0)
+                menu.Items.Add(new ToolStripMenuItem("(no installs detected)") { Enabled = false });
+            foreach (var inst in installs)
+            {
+                var item = new ToolStripMenuItem($"{inst.Label}   {inst.Path}")
+                {
+                    Checked = !auto && string.Equals(inst.Path, current, StringComparison.OrdinalIgnoreCase),
+                };
+                string p = inst.Path;
+                item.Click += (_, _) => Choose(p);
+                menu.Items.Add(item);
+            }
+
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Browse for chrome.exe…", null, (_, _) =>
+            {
+                using var dlg = new OpenFileDialog
+                {
+                    Title = "Choose the browser executable to inspect",
+                    Filter = "Browser executable (*.exe)|*.exe|All files (*.*)|*.*",
+                    FileName = "chrome.exe",
+                    InitialDirectory = current != null ? Path.GetDirectoryName(current) : null,
+                    CheckFileExists = true,
+                };
+                if (dlg.ShowDialog(grid.FindForm()) == DialogResult.OK) Choose(dlg.FileName);
+            });
+            var autoItem = new ToolStripMenuItem(
+                "Auto-detect" + (auto && current != null ? $"   (using {current})" : "")) { Checked = auto };
+            autoItem.Click += (_, _) => Choose(null);
+            menu.Items.Add(autoItem);
+
+            menu.Show(Cursor.Position);
+        }
 
         /// <summary>
         /// Backs up every Chrome extension to a zip in Downloads, then (after confirmation)

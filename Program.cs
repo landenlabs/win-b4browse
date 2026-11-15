@@ -28,6 +28,18 @@ namespace B4Browse
         {
             var args = Environment.GetCommandLineArgs();
 
+            // Crash/exception logging to %LOCALAPPDATA%\B4Browse\logs - before any window exists.
+            int tc = Array.FindIndex(args, a => a.Equals("--test-crash", StringComparison.OrdinalIgnoreCase));
+            string? crashKind = tc >= 0 ? (tc + 1 < args.Length ? args[tc + 1].ToLowerInvariant() : "ui") : null;
+            bool headless = args.Skip(1).Any(a => a.StartsWith("-") || a.StartsWith("/"));
+            CrashLog.Install(gui: !headless || crashKind == "ui");
+
+            if (crashKind != null)
+            {
+                TestCrash(crashKind);
+                return;
+            }
+
             if (args.Any(a => a is "--help" or "-h" or "/?" or "-?" or "/help"))
             {
                 PrintHelp();
@@ -198,6 +210,47 @@ EXAMPLES:
                 Console.Error.WriteLine("Dump failed: " + ex.Message);
             }
         }
+
+        /// <summary>
+        /// Hidden diagnostic: deliberately throws so each <see cref="CrashLog"/> handler can be
+        /// verified end-to-end. <c>ui</c> = UI-thread exception (dialog, app keeps running),
+        /// <c>thread</c> = background-thread exception (process terminates), <c>task</c> =
+        /// unobserved faulted task (logged, process exits normally). Check the log afterwards.
+        /// </summary>
+        static void TestCrash(string kind)
+        {
+            EnsureConsole();
+            Console.Error.WriteLine($"--test-crash {kind}: log = {CrashLog.LogPath}");
+            switch (kind)
+            {
+                case "ui":
+                    ApplicationConfiguration.Initialize();
+                    var form = new Form { Text = "B4-Browse crash test", Width = 400, Height = 150 };
+                    form.Shown += (_, _) => throw new InvalidOperationException("Test UI-thread crash (--test-crash ui)");
+                    Application.Run(form);
+                    break;
+                case "thread":
+                    var t = new System.Threading.Thread(() =>
+                        throw new InvalidOperationException("Test background-thread crash (--test-crash thread)"));
+                    t.Start();
+                    t.Join();
+                    break;
+                case "task":
+                    StartFaultedTask();   // separate frame so the task isn't kept alive by a local
+                    System.Threading.Thread.Sleep(500);
+                    GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+                    Console.Error.WriteLine("task fault collected - check the log");
+                    break;
+                default:
+                    Console.Error.WriteLine("Use: --test-crash ui | thread | task");
+                    break;
+            }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        static void StartFaultedTask() =>
+            System.Threading.Tasks.Task.Run(new Action(() =>
+                throw new InvalidOperationException("Test unobserved task (--test-crash task)")));
 
         /// <summary>Writes any recorded background-action errors to stderr (keeping stdout the clean report).</summary>
         static void FlushErrorLog()

@@ -23,7 +23,7 @@ B4Browse.exe --run events --out events.txt   # also write report to a file
 ```
 
 Scopes: `scan, dns, arp, patches, chrome, settings, services, processes, startup, scheduled,
-installed, devices, winext, events, activity, downloads, firewall, virus, restores, users, all` (the
+installed, devices, winext, events, activity, downloads, firewall, virus, restores, partitions, users, all` (the
 catalog in `Reports.cs` is the source of truth). `events` needs Administrator to read the Security log;
 `downloads` needs Administrator to read the SRUM database; `virus` reads protection state without
 elevation but needs Administrator for the Defender threat/scan history (the event log); `users` lists
@@ -103,12 +103,13 @@ The whole app is built on one small data model and a single declarative catalog:
 | `SafetyChecks.Defender.cs` | Defender protection state (WMI `MSFT_MpComputerStatus`) + threat/scan history (Defender Operational event log) — the Virus tab |
 | `SafetyChecks.SecurityCenter.cs` | Windows Security Center (`root\SecurityCenter2`) registered antivirus/firewall products — feeds the Virus tab (alternate AV, e.g. CrowdStrike) and the Firewall tab (third-party firewall provider) |
 | `SafetyChecks.Restore.cs` | System Restore points |
+| `SafetyChecks.Partitions.cs` | Disk partitions (WMI `root\Microsoft\Windows\Storage`), Windows RE state (`ReAgent.xml`), partition-table/MBR change history (`Partition/Diagnostic` event 1006, hashed per disk) — the Partitions tab; no elevation needed |
 | `SafetyChecks.Users.cs` | Local user accounts (`Get-LocalUser`) + Administrators membership, hidden/`SpecialAccounts`, layered creation date (event 4720 → profile-folder ctime → unknown) — the Users tab |
 
 ### Row model / DTO classes
 One small record-like class per item type, consumed by the grids:
 `AppActivity`, `ArpEntry`, `ChromeExtension`, `DeviceDriver`, `DnsCacheEntry`, `EventItem`,
-`FirewallRule`, `InstalledProgram`, `ProcessItem`, `RestorePoint`, `ScheduledTaskItem`,
+`FirewallRule`, `InstalledProgram`, `PartitionItem`, `ProcessItem`, `RestorePoint`, `ScheduledTaskItem`,
 `ServiceInfo`, `ShellExtension`, `SruNetUsage`, `StartupItem`, `UserAccount`. The Settings tab uses a small matrix model
 instead (`ChromeSettingsMatrix.cs`: `ChromeSettingsMatrix` / `SettingRow` / `ColumnDef`). The
 Virus tab uses `DefenderModels.cs`: `DefenderStatusSummary` (WMI state), `ThreatDetectionRecord` /
@@ -119,6 +120,10 @@ Virus tab uses `DefenderModels.cs`: `DefenderStatusSummary` (WMI state), `Threat
 - `EmbeddedAssets.cs` — load embedded icon/images (works inside the single-file exe).
 - `InfAnalyzer.cs` — parse/analyze driver `.inf` files (driver tab "Analyze INF").
 - `ReportMailer.cs` — "Email this tab (Chrome)".
+- `PartitionBaseline.cs` — run-to-run partition fingerprint store (`%LOCALAPPDATA%\B4Browse\partitions.json`):
+  first-seen / last-changed / removed per fixed-disk partition + Windows RE state. Updated by both the
+  launch-time history snapshot and the Partitions tab (idempotent, locked). Anything new persisted to
+  `%LOCALAPPDATA%\B4Browse` must also be listed in `docs/privacy.md`.
 - `ShellExtension.cs` — shell-extension lookup support.
 - `ErrorLog.cs` — process-wide, thread-safe, bounded in-memory sink for background-action
   failures (`ErrorCategory` Timeout/ParseError/Error, `ErrorEntry`, `Changed` event,

@@ -32,6 +32,7 @@ namespace B4Browse
         [JsonPropertyName("restores")]   public int RestorePoints   { get; set; } = -1;
         [JsonPropertyName("devices")]    public int Devices         { get; set; } = -1;
         [JsonPropertyName("firewall")]   public int FirewallRules   { get; set; } = -1;
+        [JsonPropertyName("partitions")] public int Partitions      { get; set; } = -1;
 
         // ---- Runtime-only deltas (not serialised) ----
         // int.MinValue = no previous row to compare against.
@@ -49,6 +50,7 @@ namespace B4Browse
         [JsonIgnore] public int DeltaRestorePoints   = int.MinValue;
         [JsonIgnore] public int DeltaDevices         = int.MinValue;
         [JsonIgnore] public int DeltaFirewallRules   = int.MinValue;
+        [JsonIgnore] public int DeltaPartitions      = int.MinValue;
 
         /// <summary>Compute deltas relative to a previous snapshot.</summary>
         public void ComputeDeltas(HistorySnapshot prev)
@@ -67,6 +69,7 @@ namespace B4Browse
             DeltaRestorePoints   = Delta(RestorePoints,   prev.RestorePoints);
             DeltaDevices         = Delta(Devices,         prev.Devices);
             DeltaFirewallRules   = Delta(FirewallRules,   prev.FirewallRules);
+            DeltaPartitions      = Delta(Partitions,      prev.Partitions);
         }
 
         private static int Delta(int current, int previous)

@@ -2554,6 +2554,110 @@ namespace B4Browse
             menu.Show(Cursor.Position);
         }
 
+        // ---- Partitions: disk layout + run-to-run baseline ---------------- //
+        public static Control BuildPartitions()
+        {
+            static PartitionItem P(object o) => (PartitionItem)o;
+            static (Color, Color)? RiskStyle(PartitionItem p) => p.Risk switch
+            {
+                TabSeverity.Alert => (RedBack, RedFore),
+                TabSeverity.Caution => (YelBack, YelFore),
+                _ => p.Removed ? (DisBack, DisFore) : null,
+            };
+
+            var cols = new[]
+            {
+                new GridColumn { Header = "Status", Width = 80,
+                    Text = o => P(o).Removed ? "Removed" : P(o).Risk switch
+                    {
+                        TabSeverity.Alert => "Alert", TabSeverity.Caution => "Review", _ => "OK",
+                    },
+                    Sort = o => (int)P(o).Risk,
+                    Style = o => RiskStyle(P(o)) },
+                new GridColumn { Header = "Disk", Width = 50,
+                    Text = o => P(o).DiskNumber < 0 ? "—" : P(o).DiskNumber.ToString(),
+                    Sort = o => P(o).DiskNumber,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "#", Width = 36,
+                    Text = o => P(o).PartitionNumber.ToString(),
+                    Sort = o => P(o).DiskNumber * 1000 + P(o).PartitionNumber },
+                new GridColumn { Header = "Drive", Width = 48, Text = o => P(o).DriveLetter },
+                new GridColumn { Header = "Type", Width = 140, Text = o => P(o).TypeText,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "File system", Width = 80, Text = o => P(o).FileSystem },
+                new GridColumn { Header = "Label", Width = 110, Text = o => P(o).Label },
+                new GridColumn { Header = "Size", Width = 80,
+                    Text = o => SafetyChecks.FormatBytes(P(o).Size),
+                    Sort = o => P(o).Size },
+                new GridColumn { Header = "Offset", Width = 80,
+                    Text = o => SafetyChecks.FormatBytes(P(o).Offset),
+                    Sort = o => P(o).Offset },
+                new GridColumn { Header = "Flags", Width = 120, Text = o => P(o).Flags },
+                new GridColumn { Header = "First seen", Width = 90,
+                    Text = o => P(o).FirstSeen?.ToString("yyyy-MM-dd") ?? (P(o).DiskTracked ? "—" : "not tracked"),
+                    Sort = o => P(o).FirstSeen ?? DateTime.MinValue },
+                new GridColumn { Header = "Last changed", Width = 95,
+                    Text = o => P(o).LastChanged?.ToString("yyyy-MM-dd") ?? "",
+                    Sort = o => P(o).LastChanged ?? DateTime.MinValue },
+                new GridColumn { Header = "Disk model", Width = 150,
+                    Text = o => P(o).DiskBus.Length > 0 ? $"{P(o).DiskName} ({P(o).DiskBus}, {P(o).DiskStyle})" : P(o).DiskName,
+                    FilterKind = ColumnFilterKind.Dropdown },
+                new GridColumn { Header = "Note", Fill = 200, Text = o => P(o).Note },
+            };
+
+            SortableGrid grid = null!;
+            grid = new SortableGrid("Refresh",
+                () => SafetyChecks.GetPartitions().Cast<object>().ToList(),
+                cols, defaultSortColumn: 2, defaultAscending: true,
+                help: TabHelp.Partitions,
+                riskRow: o => o is PartitionItem p && p.Risk >= TabSeverity.Caution,
+                dimRow: o => o is PartitionItem p && p.Removed,
+                headerInfo: SafetyChecks.PartitionsHeader,
+                summary: () =>
+                {
+                    var a = SafetyChecks.GetPartitionAudit();
+                    int live = a.Items.Count(p => !p.Removed);
+                    int disks = a.Items.Where(p => !p.Removed).Select(p => p.DiskNumber).Distinct().Count();
+                    return $"{live} partition(s) on {disks} disk(s)";
+                },
+                severity: SafetyChecks.PartitionSeverity,
+                extraButtons: new (string, Action)[]
+                {
+                    ("Disk Management", () => StartShell(grid, "diskmgmt.msc")),
+                    ("Open baseline file", () =>
+                    {
+                        try
+                        {
+                            string path = PartitionBaseline.FilePath;
+                            string arg = File.Exists(path) ? $"/select,\"{path}\"" : $"\"{Path.GetDirectoryName(path)}\"";
+                            Process.Start(new ProcessStartInfo("explorer.exe", arg) { UseShellExecute = true });
+                        }
+                        catch { }
+                    }),
+                },
+                onRowContext: o => ShowPartitionMenu(grid, (PartitionItem)o));
+            return grid;
+        }
+
+        private static void ShowPartitionMenu(Control owner, PartitionItem p)
+        {
+            var menu = new ContextMenuStrip();
+            string summary = $"Disk {p.DiskNumber} partition {p.PartitionNumber}: {p.TypeText}, " +
+                             $"{SafetyChecks.FormatBytes(p.Size)} at offset {p.Offset:N0}" +
+                             (p.Note.Length > 0 ? $" - {p.Note}" : "");
+            menu.Items.Add("Copy details", null, (_, _) => { try { Clipboard.SetText(summary); } catch { } });
+            menu.Items.Add("Copy partition ID", null, (_, _) => { try { Clipboard.SetText(p.Key); } catch { } })
+                .Enabled = p.Key.Length > 0;
+            menu.Items.Add("Copy type ID", null, (_, _) => { try { Clipboard.SetText(p.TypeId); } catch { } })
+                .Enabled = p.TypeId.Length > 0;
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("Open Disk Management", null, (_, _) => StartShell(owner, "diskmgmt.msc"));
+            menu.Items.Add("Search web for this partition type", null, (_, _) =>
+                OpenBrowser("https://www.google.com/search?q=" +
+                    HttpUtility.UrlEncode($"partition type {(p.TypeText.StartsWith("MBR type") || !p.KnownType ? p.TypeId : p.TypeText)}")));
+            menu.Show(Cursor.Position);
+        }
+
         // ---- Users: local user accounts ---------------------------------- //
         public static Control BuildUsers()
         {
@@ -2845,6 +2949,10 @@ namespace B4Browse
                     Text = o => FmtCount(((HistorySnapshot)o).FirewallRules),
                     Sort = o => ((HistorySnapshot)o).FirewallRules,
                     Style = o => DeltaStyle(((HistorySnapshot)o).DeltaFirewallRules) },
+                new GridColumn { Header = "Partitions", Width = 66,
+                    Text = o => FmtCount(((HistorySnapshot)o).Partitions),
+                    Sort = o => ((HistorySnapshot)o).Partitions,
+                    Style = o => DeltaStyle(((HistorySnapshot)o).DeltaPartitions) },
             };
 
             return new SortableGrid("Refresh",

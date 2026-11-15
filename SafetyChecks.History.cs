@@ -51,6 +51,7 @@ namespace B4Browse
             // ---- Slower (WMI round-trip) ----
             snap.ScheduledTasks  = CountScheduledTasksWmi();
             snap.Devices         = CountDevicesWmi();
+            snap.Partitions      = UpdatePartitionBaseline();   // also refreshes partitions.json
 
             return snap;
         }
@@ -88,6 +89,7 @@ namespace B4Browse
                 ReportDelta(group, "Restore points",   latest.RestorePoints,   latest.DeltaRestorePoints);
                 ReportDelta(group, "Devices",          latest.Devices,         latest.DeltaDevices);
                 ReportDelta(group, "Firewall rules",   latest.FirewallRules,   latest.DeltaFirewallRules);
+                ReportDelta(group, "Partitions",       latest.Partitions,      latest.DeltaPartitions);
             }
 
             return group;

@@ -81,6 +81,8 @@ namespace B4Browse
             "- Firewall - firewall state and rules, with an audit for hole-punching / persistence rules.\n" +
             "- Virus - Microsoft Defender protection state and its threat / scan history.\n" +
             "- Restores - System Restore points; zero points or a disabled service is a ransomware indicator (admin only).\n" +
+            "- Partitions - disk partitions incl. the hidden EFI / Recovery ones; flags a disabled Windows RE and " +
+            "partitions created, resized or removed since an earlier run.\n" +
             "- Users - local user accounts, flagging hidden, admin, recently-created or dormant accounts.\n" +
             "- Links - curated links to security tools and references.\n" +
             "\n" +
@@ -873,6 +875,55 @@ namespace B4Browse
             "the checkpoint date against any known infection window (e.g. Defender events) first.\n" +
             "\n" + Common);
 
+        public static readonly HelpInfo Partitions = new("Disk Partitions",
+            "# What this shows\n" +
+            "Every partition on every attached disk (from the Windows Storage WMI provider), with its " +
+            "type, size, position on the disk, and flags - including the hidden ones File Explorer never " +
+            "shows: the EFI System Partition, Microsoft Reserved, and Recovery partitions. No administrator " +
+            "rights are needed.\n" +
+            "\n" +
+            "# Why it matters (security)\n" +
+            "- Bootkits (MITRE ATT&CK T1542.003) rewrite the boot sector or plant files on the EFI System " +
+            "Partition so they load before Windows and before antivirus (Petya, TDL4, Rovnix, FinSpy, " +
+            "ESPecter, BlackLotus). Some also create a hidden partition to store their payload.\n" +
+            "- Ransomware disables or deletes recovery options before encrypting (T1490): " +
+            "'reagentc /disable', deleting or shrinking the Recovery partition, purging restore points " +
+            "(see the Restores tab).\n" +
+            "\n" +
+            "# How changes are detected\n" +
+            "Windows does not record when a partition was last changed, so three sources are combined:\n" +
+            "- Baseline - each run, B4-Browse saves a fingerprint of every partition on the fixed internal " +
+            "disks (identity, type, position, size, hidden flag) plus the Windows RE state to " +
+            "%LOCALAPPDATA%\\B4Browse\\partitions.json. 'First seen' and 'Last changed' come from it, and a " +
+            "partition that disappears is kept as a 'Removed' row for 90 days. USB / SD / virtual disks are " +
+            "listed but not tracked (they come and go legitimately).\n" +
+            "- Windows' own history - the Microsoft-Windows-Partition/Diagnostic log records each disk's raw " +
+            "partition table and boot sector (MBR) every time the disk arrives (every boot, every plug-in). " +
+            "The header compares them over time and reports when a table changed - even before B4-Browse " +
+            "was installed (as far back as the log reaches). A boot sector that changed while the partition " +
+            "table did not is a classic bootkit sign.\n" +
+            "- Windows RE - %windir%\\System32\\Recovery\\ReAgent.xml says whether Windows RE is enabled and " +
+            "which partition it lives on.\n" +
+            "\n" +
+            "# Status colours\n" +
+            "- Red (Alert) - an EFI System or Recovery partition changed or was removed in the last 30 days, " +
+            "or Windows RE is disabled.\n" +
+            "- Yellow (Review) - any other partition was created / resized / moved / removed in the last 30 " +
+            "days; an unrecognised partition type; a hidden data partition; an EFI / Recovery partition " +
+            "mounted with a drive letter; more than one EFI System Partition on a disk.\n" +
+            "\n" +
+            "# Common, harmless findings\n" +
+            "- Several Recovery partitions - Windows creates a new one when an update cannot grow the old " +
+            "one; OEM PCs also ship a factory-image partition. Only the one marked 'WinRE' is in use.\n" +
+            "- A change right after a Windows feature update, a disk resize, or installing a second OS.\n" +
+            "- The very first run records the baseline, so nothing shows as changed until a later run.\n" +
+            "\n" +
+            "# Special actions\n" +
+            "- Disk Management - opens diskmgmt.msc.\n" +
+            "- Open baseline file - shows partitions.json in File Explorer.\n" +
+            "- Right-click a row to copy its details / partition ID / type ID, or search the web for its type.\n" +
+            "\n" + Common);
+
         public static readonly HelpInfo Users = new("User Accounts",
             "# What this shows\n" +
             "Every local user account on this PC (from Get-LocalUser), with the signals that matter for " +
@@ -950,6 +1001,7 @@ namespace B4Browse
             "- Chrome Ext  - Chrome extensions across all profiles.\n" +
             "- Users       - local user profiles (S-1-5-21-* SIDs in ProfileList).\n" +
             "- Restores    - VSS shadow copies (restore points).\n" +
+            "- Partitions  - partitions on fixed internal disks (also refreshes the Partitions baseline).\n" +
             "- Devices     - PnP signed device drivers (WMI; may be slow).\n" +
             "- Firewall    - firewall rules in the registry.\n" +
             "\n" +
@@ -963,6 +1015,7 @@ namespace B4Browse
             "- A sudden jump in Installed, Startup, Scheduled, Shell Ext, or Firewall between two " +
             "snapshots you did not expect is worth investigating on the corresponding tab.\n" +
             "- A drop in Restores is a red flag — legitimate software rarely deletes restore points.\n" +
+            "- Any change in Partitions is unusual outside a Windows feature update or disk work - check the Partitions tab.\n" +
             "- A new Users entry (count up by 1) may indicate an account was created without your knowledge.\n" +
             "\n" +
             "# Note\n" +

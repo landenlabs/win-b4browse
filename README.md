@@ -2,7 +2,7 @@
 <table border="0">
   <tr>
     <td>
-      <!-- VERSION -->v6.11.12<br>
+      <!-- VERSION -->v6.11.13<br>
       <!-- DATE -->15-Nov-2026<br>
       Windows<br>
       <a href="https://landenlabs.com/index.html">Home</a>
@@ -86,6 +86,8 @@ The idea is to correlate these dates against your known Windows patch cadence: c
 
 - **Users** — every local user account (`Get-LocalUser`), flagging the ones worth a look: the built-in **Administrator** or **Guest** enabled, an account **hidden** from the sign-in screen, **recently-created** accounts (a classic backdoor / persistence trick — correlate against the Patches date), and **expired-but-enabled** or **dormant** accounts. Shows each account's administrator membership, last sign-in, and expiry. The **Created** date is best-effort: the true time from the Security audit log (event 4720) when run as Administrator, otherwise the profile folder's age as an approximate first-logon proxy — the *Created src* column says which.
 
+- **Partitions** — every disk partition, including the hidden EFI System, Microsoft Reserved and Recovery partitions that File Explorer never shows. Bootkits (Petya, TDL4, BlackLotus, ...) tamper with the boot sector / EFI partition, and ransomware disables or deletes recovery options (`reagentc /disable`, deleting the Recovery partition), so the tab flags a **disabled Windows RE**, partitions that were **created, resized, moved or removed** since an earlier run (the app saves a fingerprint of each fixed-disk partition every run, since Windows records no "last changed" time), unrecognised partition types, hidden data partitions, and an EFI / Recovery partition mounted with a drive letter. It also reads Windows' own `Partition/Diagnostic` event log, which records each disk's partition table and MBR at every boot, to report whether the table has changed as far back as the log goes. No administrator rights needed.
+
 ### 3. Right-click actions
 
 Several panels let you **right-click a row** to investigate the item directly:
@@ -133,7 +135,7 @@ Run with no arguments to launch the GUI. The headless modes run the same checks 
 | `B4Browse.exe --out <file>` | Also write the report text to `<file>` (headless modes only). |
 | `B4Browse.exe --help` | Show usage and exit. Also `-h`, `-?`, `/?`. |
 
-**Scopes:** `scan`, `dns`, `arp`, `rootca`, `firewall`, `patches`, `processes`, `services`, `startup`, `scheduled`, `installed`, `devices`, `winext`, `users`, `activity`, `awake`, `downloads`, `events`, `virus`, `restores`, `chrome`, `settings`, `all`.
+**Scopes:** `scan`, `dns`, `arp`, `rootca`, `firewall`, `patches`, `processes`, `services`, `startup`, `scheduled`, `installed`, `devices`, `winext`, `users`, `activity`, `awake`, `downloads`, `events`, `virus`, `restores`, `partitions`, `chrome`, `settings`, `all`.
 
 ```bat
 B4Browse.exe --run scan

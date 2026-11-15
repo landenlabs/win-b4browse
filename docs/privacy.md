@@ -25,8 +25,9 @@ and what is stored.
 To find problems, B4-Browse reads system information locally, including network and DNS
 settings, the hosts file, the ARP cache, installed programs, running processes, services,
 drivers, startup entries, scheduled tasks, shell extensions, firewall rules, Windows event logs,
-Microsoft Defender status and history, System Restore points, local user accounts, app usage
-records kept by Windows, and Google Chrome settings, extensions and profile metadata.
+Microsoft Defender status and history, System Restore points, disk partition layout and Windows
+Recovery Environment status, local user accounts, app usage records kept by Windows, and Google
+Chrome settings, extensions and profile metadata.
 
 This information is shown to you in the app and **is not sent to LanDen Labs or anyone else**,
 except for the specific items listed in the next section.
@@ -65,9 +66,19 @@ Some features open your web browser or another program only when you click them:
 
 B4-Browse keeps a small amount of data in `%LOCALAPPDATA%\B4Browse`:
 
-- Your theme and display-scale preferences.
-- Scan history, so the app can show what changed since the last scan.
-- Crash and error logs, used only to show you what went wrong.
+- Your preferences: theme and display scale (`theme.txt`, `scale.txt`), the Chrome location you
+  chose if you overrode auto-detection (`chrome-path.txt`), and whether you turned off the Chrome
+  tip (`chrome-hint-off.txt`).
+- Scan history (`history.json`): one entry per day, at most 100, holding only **counts** (for
+  example, the number of installed programs, services or partitions), so the app can show what
+  changed since the last scan. It does not store names, file paths or other details.
+- A partition baseline (`partitions.json`), so the Partitions tab can tell when a disk partition
+  was created, resized or removed. For each partition on your internal disks it stores the disk
+  model name and the disk's and partition's identifiers (GUIDs), plus the partition's type,
+  position, size, hidden flag, and the dates it was first seen and last changed. It also stores
+  whether the Windows Recovery Environment is enabled. These identifiers are specific to your
+  disks, but they never leave your PC.
+- Crash and error logs (`logs\b4browse.log`), used only to show you what went wrong.
 
 Exporting or emailing a report also writes a text copy to your Windows temporary folder.
 

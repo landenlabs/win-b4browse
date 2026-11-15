@@ -16,7 +16,7 @@
   IgnorableNamespaces="uap rescap">
   <Identity Name="{IDENTITY_NAME}" Publisher="{PUBLISHER}" Version="{VERSION}" ProcessorArchitecture="x64" />
   <Properties>
-    <DisplayName>B4Browse</DisplayName>
+    <DisplayName>B4-Browse</DisplayName>
     <PublisherDisplayName>{PUBLISHER_DISPLAY_NAME}</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <Description>Verifies network and OS are in a safe state before browsing.</Description>
@@ -30,12 +30,12 @@
   <Applications>
     <Application Id="App" Executable="B4Browse.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="B4Browse"
+        DisplayName="B4-Browse"
         Square44x44Logo="Assets\Square44x44Logo.png"
         Square150x150Logo="Assets\Square150x150Logo.png"
         BackgroundColor="transparent"
         Description="Verifies network and OS are in a safe state before browsing.">
-        <uap:DefaultTile ShortName="B4Browse" Wide310x150Logo="Assets\Wide310x150Logo.png" />
+        <uap:DefaultTile ShortName="B4-Browse" Wide310x150Logo="Assets\Wide310x150Logo.png" />
       </uap:VisualElements>
     </Application>
   </Applications>

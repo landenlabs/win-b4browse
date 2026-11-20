@@ -56,6 +56,7 @@ namespace B4Browse
         private readonly Func<IReadOnlyList<object>, TabSeverity>? _severityEval;
         private readonly Func<object, bool>? _riskRow;   // per-row "warrants review" test for the nav count badge
         private readonly Func<object, bool>? _dimRow;    // per-row "dim this row" — mutes text for shadowed/superseded rows
+        private readonly StatusTips? _statusTips;        // hover text for highlighted cells, from the panel's Help
         private readonly Action<object>? _onRowContext;
         private readonly CheckBox? _toggle;
         private readonly Func<object, bool>? _hideWhenOff;
@@ -132,6 +133,7 @@ namespace B4Browse
             _cols = columns;
             _onButton = onButtonClick;
             _dimRow = dimRow;
+            _statusTips = help != null ? new StatusTips(help.Body) : null;
             _summary = summary;
             _headerInfo = headerInfo;
             _severityEval = severity;
@@ -893,6 +895,9 @@ namespace B4Browse
                         cell.Style.ForeColor = s.Fore;
                         cell.Style.SelectionBackColor = s.Back;
                         cell.Style.SelectionForeColor = s.Fore;
+                        // Explain the highlight on hover, using the panel's Help wording.
+                        if (_statusTips != null && !_cols[i].Button)
+                            cell.ToolTipText = _statusTips.For(values[i]?.ToString() ?? "", s.Back);
                     }
                 }
             }

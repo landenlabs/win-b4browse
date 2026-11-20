@@ -120,6 +120,11 @@ Virus tab uses `DefenderModels.cs`: `DefenderStatusSummary` (WMI state), `Threat
 - `EmbeddedAssets.cs` — load embedded icon/images (works inside the single-file exe).
 - `InfAnalyzer.cs` — parse/analyze driver `.inf` files (driver tab "Analyze INF").
 - `ReportMailer.cs` — "Email this tab (Chrome)".
+- `InstallSource.cs` — detects the install channel (`Store` = packaged MSIX via `GetCurrentPackageFamilyName`,
+  `Msi` = exe in `Program Files\B4Browse`, else `Portable`). `UpdateCheck.cs` queries GitHub Releases and
+  picks the matching asset (.msi / B4Browse.exe), but is **never** used for Store installs — the About
+  dialog hands those off to the Store (`ms-windows-store://downloadsandupdates`), because the Store
+  updates them itself and lags GitHub by its certification time.
 - `PartitionBaseline.cs` — run-to-run partition fingerprint store (`%LOCALAPPDATA%\B4Browse\partitions.json`):
   first-seen / last-changed / removed per fixed-disk partition + Windows RE state. Updated by both the
   launch-time history snapshot and the Partitions tab (idempotent, locked). Anything new persisted to

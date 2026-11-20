@@ -43,7 +43,7 @@ except for the specific items listed in the next section.
 | Discover your router's model | Your local router (UPnP/SSDP, on your own network only) | A standard local discovery request |
 | Check that your clock is correct | NTP time servers (`time.nist.gov`, `time.cloudflare.com`, `time.google.com`) and `www.cloudflare.com` | A standard time request |
 | Check whether Chrome is up to date | Google's Chrome version-history API (`versionhistory.googleapis.com`) | A request for the current stable version number; nothing about your PC |
-| Check for B4-Browse updates (only when you click it in **About**) | GitHub (`api.github.com`) | A request for the latest release |
+| Check for B4-Browse updates (only when you click it in **About**; never for Microsoft Store installs, which the Store updates itself and where the button just opens the Store) | GitHub (`api.github.com`) | A request for the latest release |
 
 As with any internet request, these services can see your public IP address and the time of the
 request. Their own privacy policies apply to them. B4-Browse does not send your name, your files,

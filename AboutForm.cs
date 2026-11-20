@@ -18,7 +18,8 @@ namespace B4Browse
         private Button _introButton = null!;    // opens the Introduction / welcome Help page
         private Button _repoButton = null!;      // opens the GitHub repository in the browser
         private Button _updateButton = null!;    // checks GitHub for a newer release (then offers download)
-        private Label _updateStatus = null!;     // result line under the update button
+        private Button _issueButton = null!;     // opens the GitHub Issues page to report a problem
+        private LinkLabel _updateStatus = null!; // result line under the update button ("Release notes" link)
         private Label _legal = null!;            // copyright + license footer (text only, no links)
         private Button _ok = null!;
         private Image? _introIcon;               // app icon banner reused on the Intro page
@@ -97,20 +98,39 @@ namespace B4Browse
             };
             _repoButton.Click += (_, _) => OpenUrl(UpdateCheck.RepoUrl);
 
+            // Store (MSIX) installs are updated by the Microsoft Store, so the button hands off to the
+            // Store instead of querying GitHub (see InstallSource / UpdateCheck for why).
             _updateButton = new Button
             {
-                Text = "⟳  Check for updates",
+                Text = InstallSource.IsStore ? "⟳  Check for updates in Store" : "⟳  Check for updates",
                 Cursor = Cursors.Hand,
             };
             _updateButton.Click += UpdateButton_Click;
 
-            _updateStatus = new Label
+            _issueButton = new Button
+            {
+                Text = "🐞  Submit issue",
+                Cursor = Cursors.Hand,
+            };
+            _issueButton.Click += (_, _) => OpenUrl(UpdateCheck.IssuesUrl);
+
+            // A LinkLabel so the "Release notes" part of the status can be clicked; with no link
+            // area set it renders as a plain label.
+            _updateStatus = new LinkLabel
             {
                 AutoSize = false,
                 TextAlign = ContentAlignment.MiddleCenter,
                 ForeColor = Theme.Subtle,
-                Text = "",
+                LinkColor = Theme.Link,
+                ActiveLinkColor = Theme.Link,
+                VisitedLinkColor = Theme.Link,
             };
+            if (InstallSource.IsStore)
+                SetStatus("Installed from the Microsoft Store — updates are installed automatically.", Theme.Subtle,
+                          "Store page", InstallSource.StoreListingUri);
+            else
+                SetStatus("", Theme.Subtle);
+            _updateStatus.LinkClicked += (_, e) => { if (e.Link?.LinkData is string url) OpenUrl(url); };
 
             // Copyright + license footer. Plain text (no links) sourced from AppInfo so it never
             // needs separate maintenance.
@@ -142,6 +162,7 @@ namespace B4Browse
             Controls.Add(_introButton);
             Controls.Add(_repoButton);
             Controls.Add(_updateButton);
+            Controls.Add(_issueButton);
             Controls.Add(_updateStatus);
             Controls.Add(_legal);
             Controls.Add(_ok);
@@ -155,7 +176,8 @@ namespace B4Browse
         private void AboutForm_Load(object? sender, EventArgs e)
         {
             // Single source of truth, kept in sync with VERSION / csproj / README by set-version.ps1.
-            _version.Text = $"Version: {AppInfo.Version}   ({AppInfo.BuildDate})";
+            // Install channel appended so screenshots / issue reports show where the copy came from.
+            _version.Text = $"Version: {AppInfo.Version}   ({AppInfo.BuildDate})  ·  {InstallSource.Label}";
 
             // Prefer the animated GIF asset, then the static PNG. Load from the embedded
             // resource baked into the (single-file) exe, with a fallback to a loose file
@@ -271,7 +293,7 @@ namespace B4Browse
             return null;
         }
 
-        // Positions the title, version, and the three stacked buttons + status line relative to the
+        // Positions the title, version, and the four stacked buttons + status line relative to the
         // bottom of the (possibly resized) picture box. Called once from the constructor and again
         // from Load after the brand image is sized. The OK button stays bottom-right anchored.
         private void LayoutBody()
@@ -294,7 +316,8 @@ namespace B4Browse
             _introButton.SetBounds(bx, headerBottom + 14, bw, bh);
             _repoButton.SetBounds(bx, _introButton.Bottom + 8, bw, bh);
             _updateButton.SetBounds(bx, _repoButton.Bottom + 8, bw, bh);
-            _updateStatus.SetBounds(12, _updateButton.Bottom + 8, ClientSize.Width - 24, 34);
+            _issueButton.SetBounds(bx, _updateButton.Bottom + 8, bw, bh);
+            _updateStatus.SetBounds(12, _issueButton.Bottom + 8, ClientSize.Width - 24, 34);
             _legal.SetBounds(12, _updateStatus.Bottom + 6, ClientSize.Width - 24, 34);
 
             // Grow the dialog to fit the content so the OK button always clears the footer, then
@@ -306,10 +329,31 @@ namespace B4Browse
             _ok.SetBounds(ClientSize.Width - _ok.Width - 12, ClientSize.Height - _ok.Height - 12, _ok.Width, _ok.Height);
         }
 
-        // Once an update has been found, the button doubles as a "download" action and opens the
-        // release page; otherwise it runs the GitHub check and reports the result inline.
+        // Sets the status line, optionally making a trailing phrase a clickable link. Links are reset
+        // on every call because assigning LinkLabel.Text can otherwise re-link the whole text.
+        private void SetStatus(string text, Color color, string? linkText = null, string? linkUrl = null)
+        {
+            string full = linkText != null && linkUrl != null ? $"{text}  {linkText}" : text;
+            _updateStatus.ForeColor = color;
+            _updateStatus.Text = full;
+            _updateStatus.Links.Clear();
+            if (linkText != null && linkUrl != null)
+                _updateStatus.Links.Add(full.Length - linkText.Length, linkText.Length, linkUrl);
+        }
+
+        // Store install: hand off to the Store's "Downloads and updates" page (no GitHub request).
+        // Otherwise: run the GitHub check; once an update is found the button doubles as a "download"
+        // action that opens the asset matching this install (the .msi or the portable exe), falling
+        // back to the release page.
         private async void UpdateButton_Click(object? sender, EventArgs e)
         {
+            if (InstallSource.IsStore)
+            {
+                OpenUrl(InstallSource.StoreUpdatesUri);
+                SetStatus("Opened the Microsoft Store — click “Get updates” there to update now.", Theme.Subtle);
+                return;
+            }
+
             if (_pendingDownloadUrl != null)
             {
                 OpenUrl(_pendingDownloadUrl);
@@ -317,28 +361,26 @@ namespace B4Browse
             }
 
             _updateButton.Enabled = false;
-            _updateStatus.ForeColor = Theme.Subtle;
-            _updateStatus.Text = "Checking GitHub for a newer release…";
+            SetStatus("Checking GitHub for a newer release…", Theme.Subtle);
 
             UpdateInfo info = await UpdateCheck.CheckAsync();
 
             _updateButton.Enabled = true;
             if (info.Error != null)
             {
-                _updateStatus.ForeColor = Color.FromArgb(200, 80, 80);
-                _updateStatus.Text = "Update check failed: " + info.Error;
+                SetStatus("Update check failed: " + info.Error, Color.FromArgb(200, 80, 80));
             }
             else if (info.Available)
             {
-                _pendingDownloadUrl = info.ReleaseUrl;
-                _updateButton.Text = $"⬇  Download {info.LatestVersion}";
-                _updateStatus.ForeColor = Theme.Link;
-                _updateStatus.Text = $"New version {info.LatestVersion} available — you have {info.CurrentVersion}.";
+                _pendingDownloadUrl = info.DownloadUrl ?? info.ReleaseUrl;
+                string what = InstallSource.Kind == InstallKind.Msi && info.DownloadUrl != null ? " installer" : "";
+                _updateButton.Text = $"⬇  Download {info.LatestVersion}{what}";
+                SetStatus($"New version {info.LatestVersion} available — you have {info.CurrentVersion}.",
+                    Theme.Link, "Release notes", info.ReleaseUrl);
             }
             else
             {
-                _updateStatus.ForeColor = Theme.Subtle;
-                _updateStatus.Text = $"You're up to date (version {info.CurrentVersion}).";
+                SetStatus($"You're up to date (version {info.CurrentVersion}).", Theme.Subtle);
             }
         }
 

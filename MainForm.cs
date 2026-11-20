@@ -229,7 +229,7 @@ namespace B4Browse
                 Cursor = Cursors.Hand,
                 Font = new Font("Segoe UI", 9f, FontStyle.Bold),
             };
-            aboutButton.Click += (_, _) => { try { var f = new AboutForm(); f.Show(); } catch { CopyableMessageBox.Show(this, "B4-Browse - Chrome Safety Check\n\nA small tool to inspect Chrome, extensions, and local system indicators relevant to browsing safety.", "About B4-Browse", MessageBoxButtons.OK, MessageBoxIcon.Information); } };
+            aboutButton.Click += (_, _) => ShowAbout();
             tip.SetToolTip(aboutButton, "About B4-Browse");
 
             _leftBottom.Controls.Add(themeIcon);
@@ -287,7 +287,12 @@ namespace B4Browse
             _nav.DrawNode += DrawNavNode;
             _nav.AfterSelect += (_, e) => { if (e.Node?.Tag is Catalog.Section sec) ShowSection(sec); };
             _nav.BeforeCollapse += (_, e) => e.Cancel = true;   // keep categories expanded
+            // The "About" row is an action, not a section: it never takes the selection (so the
+            // current section stays highlighted) and opens the About dialog when clicked.
+            _nav.BeforeSelect += (_, e) => { if (e.Node?.Tag == AboutNavTag) e.Cancel = true; };
+            _nav.NodeMouseClick += (_, e) => { if (e.Button == MouseButtons.Left && e.Node?.Tag == AboutNavTag) ShowAbout(); };
 
+            TreeNode? lastCat = null;
             foreach (var cat in Catalog.Categories)
             {
                 var secs = Catalog.InCategory(cat, Elevation.IsAdmin).ToList();
@@ -295,8 +300,14 @@ namespace B4Browse
                 var catNode = new TreeNode(cat);   // a null Tag marks a category row
                 foreach (var s in secs) catNode.Nodes.Add(new TreeNode(s.Title) { Tag = s });
                 _nav.Nodes.Add(catNode);
+                lastCat = catNode;
             }
+            // "About" pinned as the last item of the side menu (under the final category).
+            var aboutNode = new TreeNode("About") { Tag = AboutNavTag };
+            if (lastCat != null) lastCat.Nodes.Add(aboutNode); else _nav.Nodes.Add(aboutNode);
             _nav.ExpandAll();
+            _nav.ShowNodeToolTips = true;
+            UpdateNavTooltips();
 
             // "Run as Admin" call-out at the top of the panel when not elevated. Neutral by
             // default; turns orchid (with a one-time flash) only while the active section needs admin.
@@ -730,6 +741,33 @@ namespace B4Browse
             _nav.Invalidate();
         }
 
+        /// <summary>Tag marking the "About" action row at the bottom of the nav tree.</summary>
+        private static readonly object AboutNavTag = new();
+
+        private AboutForm? _about;   // single About instance; re-activated rather than duplicated
+
+        /// <summary>Opens the About dialog (shared by the nav "About" row and the "?" footer button).
+        /// If it is already open it is brought to the front instead of opening a second copy.</summary>
+        private void ShowAbout()
+        {
+            try
+            {
+                if (_about is { IsDisposed: false })
+                {
+                    if (_about.WindowState == FormWindowState.Minimized) _about.WindowState = FormWindowState.Normal;
+                    _about.Activate();
+                    return;
+                }
+                _about = new AboutForm();
+                _about.FormClosed += (_, _) => _about = null;
+                _about.Show(this);
+            }
+            catch
+            {
+                CopyableMessageBox.Show(this, "B4-Browse - Chrome Safety Check\n\nA small tool to inspect Chrome, extensions, and local system indicators relevant to browsing safety.", "About B4-Browse", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
         /// <summary>Selects the tree node bound to a section (drives the highlight).</summary>
         private void SelectNodeFor(Catalog.Section sec)
         {
@@ -774,7 +812,32 @@ namespace B4Browse
         private void OnSectionSeverity()
         {
             if (_nav.IsHandleCreated)
-                _nav.BeginInvoke(new Action(() => { _nav.Invalidate(); UpdateBanner(); }));
+                _nav.BeginInvoke(new Action(() => { UpdateNavTooltips(); _nav.Invalidate(); UpdateBanner(); }));
+        }
+
+        /// <summary>Hover text for a nav row: the page's full title, plus its counts once it has run
+        /// (e.g. "Local network configuration 37 items, 3 to review").</summary>
+        private static string NavTooltip(string title, (int Total, int Risk)? counts)
+        {
+            if (counts is not { } c) return title;
+            string items = $"{c.Total} {(c.Total == 1 ? "item" : "items")}";
+            return c.Risk > 0 ? $"{title} {items}, {c.Risk} to review" : $"{title} {items}";
+        }
+
+        /// <summary>Refreshes every nav row's hover text from the current section counts.</summary>
+        private void UpdateNavTooltips()
+        {
+            foreach (TreeNode cat in _nav.Nodes)
+            {
+                cat.ToolTipText = cat.Tag == AboutNavTag ? "About B4-Browse" : NavTooltip(cat.Text, CategoryCounts(cat));
+                foreach (TreeNode n in cat.Nodes)
+                    n.ToolTipText = n.Tag switch
+                    {
+                        Catalog.Section s => NavTooltip(s.BannerOrTitle, CountsOf(s)),
+                        _ when n.Tag == AboutNavTag => "About B4-Browse",
+                        _ => n.Text,
+                    };
+            }
         }
 
         /// <summary>Owner-draws a nav row tinted by severity. Section rows use their own severity;
@@ -796,6 +859,13 @@ namespace B4Browse
                 sev = SevOf(section);
                 counts = CountsOf(section);
                 needsElevationDot = section.NeedsAdmin;
+            }
+            else if (node.Tag == AboutNavTag)
+            {
+                // Plain action row (About): no severity, no badge.
+                isCategory = false;
+                sev = TabSeverity.None;
+                counts = null;
             }
             else
             {
